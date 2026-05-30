@@ -15,9 +15,9 @@ import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
 
-import {AuctionRound, ILVRAuctionHook} from "./interfaces/ILVRAuctionHook.sol";
+import {AuctionRound, IEigenAuctionHook} from "./interfaces/IEigenAuctionHook.sol";
 
-contract LVRAuctionHook is BaseHook, ILVRAuctionHook {
+contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     using CurrencyLibrary for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
     using BeforeSwapDeltaLibrary for BeforeSwapDelta;

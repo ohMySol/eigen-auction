@@ -1,1 +1,1 @@
-## Smart Contract Part of the AVS LVR Auction Hook
+## Smart Contract Part of the Eigen Auction Hook
