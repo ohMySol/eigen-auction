@@ -1,0 +1,1 @@
+// sign winner of the auction with operator ECDSA key

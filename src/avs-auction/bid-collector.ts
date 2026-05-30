@@ -1,0 +1,1 @@
+// HTTP client to fetch bids from searcher-rpc endpoints
