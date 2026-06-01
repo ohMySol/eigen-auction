@@ -7,3 +7,6 @@
 [submodule "src/contracts/lib/eigenlayer-middleware"]
 	path = src/contracts/lib/eigenlayer-middleware
 	url = https://github.com/Layr-Labs/eigenlayer-middleware
+[submodule "src/contracts/lib/openzeppelin-contracts"]
+	path = src/contracts/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts

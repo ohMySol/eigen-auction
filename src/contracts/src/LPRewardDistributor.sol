@@ -41,6 +41,8 @@ contract LPRewardDistributor is ILPRewardDistributor {
         _;
     }
 
+    /* СONSTRUCTOR */
+
     /// @dev Constructor initilize the hook contract connected to this distributor
     /// @param _hook Hook contract address
     constructor(address _hook) {
