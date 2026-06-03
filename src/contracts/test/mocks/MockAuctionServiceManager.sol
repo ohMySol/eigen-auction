@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {PoolId} from "v4-core/types/PoolId.sol";
-import {IStrategy} from "eigenlayer-contracts/src/contracts/interfaces/IStrategy.sol";
 
 import {IAuctionServiceManager, AuctionResult} from "../../src/interfaces/IAuctionServiceManager.sol";
 import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
@@ -12,10 +11,12 @@ import {EventsLib} from "../../src/libraries/EventsLib.sol";
 /// @author ohMySol
 /// @notice Test double for `EigenAuctionHook` unit tests. A single trusted owner commits winners
 /// directly, bypassing the ECDSA quorum and EigenLayer entirely. The `signatures` argument to
-/// `commitWinner` is ignored, and the EigenLayer-only methods (`initialize`, `createOperatorSet`,
-/// `configureSlashing`, `challengeWinner`) are stubs. Never deploy to production.
-/// @dev Implements the full `IAuctionServiceManager` surface so it is drop-in compatible with the
-/// hook, which only ever reads `getWinner`.
+/// `commitWinner` is ignored, and the EigenLayer-only methods (`initialize`, `challengeWinner`) are
+/// stubs. Never deploy to production.
+/// @dev Implements the hook-facing `IAuctionServiceManager` surface, so it is drop-in compatible
+/// with the hook, which only ever reads `getWinner`. It deliberately does NOT pull in `IStrategy`
+/// (the operator-set admin functions live only on the real contract), keeping this mock — and any
+/// V4 test that imports it — free of EigenLayer's `^0.8.27` pragma.
 contract MockAuctionServiceManager is IAuctionServiceManager {
     /* STORAGE */
 
@@ -51,14 +52,6 @@ contract MockAuctionServiceManager is IAuctionServiceManager {
     /// @inheritdoc IAuctionServiceManager
     /// @dev No-op: the mock has no EigenLayer wiring to initialise.
     function initialize(address, address) external override {}
-
-    /// @inheritdoc IAuctionServiceManager
-    /// @dev No-op: the mock has no EigenLayer operator set.
-    function createOperatorSet(IStrategy[] calldata) external override {}
-
-    /// @inheritdoc IAuctionServiceManager
-    /// @dev No-op: the mock cannot slash.
-    function configureSlashing(IStrategy[] calldata, uint256[] calldata) external override {}
 
     /// @inheritdoc IAuctionServiceManager
     /// @dev No-op: the mock has no challenge or slashing logic.
