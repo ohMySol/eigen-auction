@@ -57,6 +57,11 @@ contract MockAuctionServiceManager is IAuctionServiceManager {
     /// @dev No-op: the mock has no challenge or slashing logic.
     function challengeWinner(PoolId, uint256, address, uint256, bytes calldata) external override {}
 
+    /// @notice Test helper: flags an already-committed result as challenged.
+    function markChallenged(PoolId poolId, uint256 targetBlock) external {
+        _results[poolId][targetBlock].challenged = true;
+    }
+
     /* WINNER COMMITMENT */
 
     /// @inheritdoc IAuctionServiceManager
