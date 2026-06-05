@@ -59,4 +59,45 @@ library ErrorsLib {
 
     /// @notice Thrown when `configureSlashing` is called with arrays of mismatched length
     error AuctionServiceManager_SlashConfigLengthMismatch();
+
+    /* Settler Errors */
+
+    /// @notice Thrown when `unlockCallback` is called by an address other than the pool manager
+    error Settler_NotPoolManager();
+
+    /// @notice Thrown when `settle` is called by an address other than the AVS-committed winner
+    error Settler_NotWinner();
+
+    /// @notice Thrown when `settle` is called for a block with no committed auction result
+    error Settler_AuctionNotCommitted();
+
+    /// @notice Thrown when `settle` is called for a block whose committed result was challenged
+    error Settler_WinnerChallenged();
+
+    /// @notice Thrown when filling a user intent whose `deadline` has passed
+    error Settler_IntentExpired();
+
+    /// @notice Thrown when a user intent's actual output is below `minAmountOut`
+    error Settler_SlippageExceeded();
+
+    /// @notice Thrown when filling a user intent whose nonce was already used or invalidated
+    error Settler_NonceUsed();
+
+    /// @notice Thrown when a user intent carries an invalid EIP-712 signature
+    error Settler_InvalidSignature();
+
+    /// @notice Thrown when `settle` is called with no arb swap and no user intents
+    error Settler_NothingToSettle();
+
+    /// @notice Thrown when a user intent's `poolId` does not match the pool being settled
+    error Settler_WrongPool();
+
+    /* EigenAuctionHook Errors — pool lock */
+
+    /// @notice Thrown when a swap reaches the hook from an address other than the registered settler
+    /// while the fallback period has not yet elapsed
+    error EigenAuctionHook_NotSettler();
+
+    /// @notice Thrown when `setSettler` is called by a non-owner or after the settler is already set
+    error EigenAuctionHook_Unauthorized();
 }

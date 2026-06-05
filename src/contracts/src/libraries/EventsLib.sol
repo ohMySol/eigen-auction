@@ -65,4 +65,37 @@ library EventsLib {
         uint256 amount0,
         uint256 amount1
     );
+
+    /* Settler Events */
+
+    /// @notice Emitted when a user swap intent is successfully filled
+    /// @param poolId Pool the intent was filled against
+    /// @param user Intent signer and token recipient
+    /// @param zeroForOne Swap direction
+    /// @param amountIn Input amount pulled from the user
+    /// @param amountOut Output amount delivered to the user
+    event IntentFilled(
+        PoolId indexed poolId,
+        address indexed user,
+        bool zeroForOne,
+        uint256 amountIn,
+        uint256 amountOut
+    );
+
+    /// @notice Emitted when a user invalidates a nonce to cancel a pending intent
+    /// @param user  Owner of the nonce
+    /// @param nonce The invalidated nonce
+    event NonceInvalidated(address indexed user, uint64 nonce);
+
+    /// @notice Emitted when a full settlement round (arb + user intents) completes
+    /// @param poolId Pool that was settled
+    /// @param blockNumber Block the settlement targeted
+    /// @param operator AVS winner that executed the settlement
+    event BlockSettled(PoolId indexed poolId, uint256 indexed blockNumber, address indexed operator);
+
+    /* EigenAuctionHook Events — venue lock */
+
+    /// @notice Emitted when the settler address is registered on the hook
+    /// @param settler The settler contract address
+    event SettlerSet(address indexed settler);
 }

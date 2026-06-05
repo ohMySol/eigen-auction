@@ -13,4 +13,7 @@ library ConstantsLib {
 
     /// @dev Fixed-point precision for the reward-per-share accumulator.
     uint256 public constant PRECISION = 1e18;
+
+    /// @notice Number of blocks without a settlement after which public swaps are re-allowed.
+    uint256 public constant FALLBACK_PERIOD = 64;
 }
