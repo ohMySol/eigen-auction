@@ -28,55 +28,92 @@ struct Position {
 
 /// @title IEigenAuctionHook
 /// @author ohMySol
-/// @notice Interface that defines the externally callable surface of the `EigenAuctionHook`.
-/// The hook enforces that only the AVS-committed auction winner may execute an arbitrage-flagged
-/// swap, skims the committed bid from the swap's output currency, and folds it into a per-tick,
-/// per-currency reward-growth accumulator so the captured value flows back to in-range LPs.
+/// @notice Interface for `EigenAuctionHook` — a Uniswap V4 hook that implements a locked
+/// LVR auction secured by an EigenLayer AVS.
+///
+/// Pool locking
+/// -------------
+/// Once a settler is registered via `setSettler`, all swaps against the pool must originate from
+/// that settler contract. Any other caller is rejected unless `FALLBACK_PERIOD` consecutive blocks
+/// have elapsed without a recorded settlement, in which case the pool re-opens to public routing.
+///
+/// LP rewards
+/// ----------
+/// The settler flags the top-of-block arb swap with `hookData = abi.encode(true)`. The hook
+/// intercepts it in `afterSwap`, reads the committed bid from the AVS, skims that amount from
+/// the swap output via `afterSwapReturnDelta`, and folds it into a per-tick reward-growth
+/// accumulator. In-range LPs claim rewards proportional to their liquidity, V3 fee-growth style.
 interface IEigenAuctionHook {
-    /// @notice The service manager that commits the per-block auction winner.
+    /// @notice The service manager that commits the per-block auction winner and bid amount.
     function avs() external view returns (IAuctionServiceManager);
 
-    /// @notice poolId => pool-wide cumulative reward growth per unit of liquidity, X128 fixed point.
+    /// @notice Address authorised to call `setSettler` (and nothing else after that).
+    function owner() external view returns (address);
+
+    /// @notice The sole address permitted to initiate swaps while the venue is locked.
+    /// `address(0)` means the settler has not yet been registered (open mode).
+    function settler() external view returns (address);
+
+    /// @notice The last block number in which `recordSettlement` was successfully called.
+    function lastSettledBlock() external view returns (uint256);
+
+    /// @notice Pool-wide cumulative reward growth per unit of liquidity, X128 fixed point.
     /// @param poolId The pool to query.
     /// @param currencyIndex 0 for currency0, 1 for currency1.
     function rewardGrowthGlobalX128(PoolId poolId, uint256 currencyIndex) external view returns (uint256);
 
+    /// @notice Register the settler. Callable exactly once by the owner.
+    /// @dev Sets `lastSettledBlock` to the current block so the fallback timer starts from now.
+    /// @param _settler Address of the deployed `Settler` contract.
+    function setSettler(address _settler) external;
+
+    /// @notice Called by the settler at the start of each settlement round to reset the
+    /// fallback liveness timer. Reverts if `msg.sender != settler`.
+    function recordSettlement() external;
+
+    /* LP ACTIONS */
+
     /// @notice Claims the caller's accrued rewards for a single liquidity position, in both currencies.
-    /// @dev Settles the position, then transfers its full pending currency0 and currency1 balances.
-    /// Reverts when there is nothing to claim. The caller must be the position owner the hook recorded
-    /// on add-liquidity.
+    /// @dev Settles the position then transfers its full pending currency0 and currency1 balances.
+    /// Reverts with `EigenAuctionHook_NothingToClaim` when there is nothing to claim.
+    /// The caller must be the position owner recorded on add-liquidity.
     ///
-    /// @param key The pool key the position belongs to.
+    /// @param key The pool the position belongs to.
     /// @param tickLower Lower tick of the position's range.
     /// @param tickUpper Upper tick of the position's range.
-    /// @param salt The salt that differentiates positions over the same range.
+    /// @param salt Salt that distinguishes positions over the same range.
     function claimRewards(PoolKey calldata key, int24 tickLower, int24 tickUpper, bytes32 salt) external;
 
-    /// @notice Returns the rewards a position has accrued (settled plus not yet settled), per currency.
-    /// @dev Does not transfer anything. The caller need not be the position owner.
+    /// @notice Returns the rewards a position has accrued (settled plus not-yet-settled), per currency.
+    /// @dev Read-only; does not transfer anything. The caller need not be the position owner.
     ///
-    /// @param key The pool key the position belongs to.
+    /// @param key The pool the position belongs to.
     /// @param owner The position owner.
     /// @param tickLower Lower tick of the position's range.
     /// @param tickUpper Upper tick of the position's range.
-    /// @param salt The salt that differentiates positions over the same range.
+    /// @param salt Salt that distinguishes positions over the same range.
     /// @return amount0 Claimable reward in currency0.
     /// @return amount1 Claimable reward in currency1.
-    function earned(PoolKey calldata key, address owner, int24 tickLower, int24 tickUpper, bytes32 salt)
-        external
-        view
-        returns (uint256 amount0, uint256 amount1);
+    function earned(
+        PoolKey calldata key,
+        address owner,
+        int24 tickLower,
+        int24 tickUpper,
+        bytes32 salt
+    ) external view returns (uint256 amount0, uint256 amount1);
 
     /// @notice Returns the liquidity the hook attributes to a position.
     ///
-    /// @param key The pool key the position belongs to.
+    /// @param key The pool the position belongs to.
     /// @param owner The position owner.
     /// @param tickLower Lower tick of the position's range.
     /// @param tickUpper Upper tick of the position's range.
-    /// @param salt The salt that differentiates positions over the same range.
-    /// @return The position's tracked liquidity.
-    function positionLiquidity(PoolKey calldata key, address owner, int24 tickLower, int24 tickUpper, bytes32 salt)
-        external
-        view
-        returns (uint128);
+    /// @param salt Salt that distinguishes positions over the same range.
+    function positionLiquidity(
+        PoolKey calldata key,
+        address owner,
+        int24 tickLower,
+        int24 tickUpper,
+        bytes32 salt
+    ) external view returns (uint128);
 }
