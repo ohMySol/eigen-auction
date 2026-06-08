@@ -17,3 +17,7 @@ docs/
 # Node / Typescript
 node_modules
 dist/
+
+# Generated per-chain deployment artifacts (written by DeployFork.s.sol; env-specific).
+# The committed test fixture lives in src/test/fixtures/deployments/.
+/deployments/*.json

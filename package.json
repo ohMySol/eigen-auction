@@ -17,10 +17,11 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "start-operator": "ts-node src/avs-auction/index.ts",
-    "dev-operator": "ts-node-dev --respawn --transpile-only src/avs-auction/index.ts",
-    "start-server": "ts-node src/searcher-rpc/server.ts",
-    "dev-server": "ts-node-dev --respawn --transpile-only src/searcher-rpc/server.ts"
+    "start-operator": "ts-node src/backend/avs-auction/index.ts",
+    "dev-operator": "ts-node-dev --respawn --transpile-only src/backend/avs-auction/index.ts",
+    "start-server": "ts-node src/backend/searcher-rpc/server.ts",
+    "dev-server": "ts-node-dev --respawn --transpile-only src/backend/searcher-rpc/server.ts",
+    "demo": "ts-node src/scripts/fork-demo.ts"
   },
   "dependencies": {
     "@types/node": "^25.9.1",
@@ -32,7 +33,8 @@
     "tsconfig-paths": "^4.2.0",
     "typescript": "^6.0.3",
     "viem": "^2.51.3",
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
