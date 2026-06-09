@@ -95,6 +95,15 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
 
     /* EIGENLAYER OPERATOR SET SETUP */
 
+    /// @notice Registers this AVS's metadata with EigenLayer's AllocationManager.
+    /// @dev Owner-only. MUST be called once before `createOperatorSet` — AllocationManager reverts
+    /// with `NonexistentAVSMetadata` otherwise. This is distinct from the inherited
+    /// `updateAVSMetadataURI`, which only writes to the legacy AVSDirectory, not the AllocationManager.
+    /// @param metadataURI URI describing the AVS (any non-empty string for local/testnet).
+    function registerAvsMetadata(string calldata metadataURI) external onlyOwner {
+        _allocationManager.updateAVSMetadataURI(address(this), metadataURI);
+    }
+
     /// @notice Creates this AVS's operator set in EigenLayer with the given slashable strategies.
     /// @dev Owner-only. Call once post-deployment; operators then join via
     /// `AllocationManager.registerForOperatorSets`. Not part of the hook-facing interface because it
