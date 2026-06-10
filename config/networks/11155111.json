@@ -1,0 +1,37 @@
+{
+  "chainId": 11155111,
+  "name": "sepolia",
+  "uniswap": {
+    "poolManager": "0xe03a1074c86cfedd5c142c4f04f1a1536e203543",
+    "stateView": "0xe1dd9c3fa50edb962e442f60dfbc432e24537e4c",
+    "positionManager": "0x429ba70129df741b2ca2a85bc3a2a3328e5c09b4",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+  },
+  "eigenlayer": {
+    "allocationManager": "0x42583067658071247ec8CE0A516A58f682002d07",
+    "delegationManager": "0xD4A7E1Bd8015057293f0D0A557088c286942e84b",
+    "avsDirectory": "0xa789c91ECDdae96865913130B786140Ee17aF545",
+    "rewardsCoordinator": "0x5ae8152fb88c26ff9ca5C014c94fca3c68029349",
+    "permissionController": "0x44632dfBdCb6D3E21EF613B0ca8A6A0c618F5a37",
+    "strategyManager": "0x2E3D6c0744b10eb0A4e6F679F71554a39Ec47a5D",
+    "stakeStrategy": "0x424246eF71b01ee33aA33aC590fd9a0855F5eFbc",
+    "stakeToken": "0x0000000000000000000000000000000000000000",
+    "comment": "stakeStrategy is EigenLayer's Sepolia WETH StrategyBase; the AVS operator set is created against it. stakeToken is unused for the demo (commitWinner only needs operator-set membership), so it is left zero."
+  },
+  "pool": {
+    "currency0": "0x0000000000000000000000000000000000000000",
+    "currency1": "0x0000000000000000000000000000000000000000",
+    "currency0Symbol": "mUSD",
+    "currency1Symbol": "mETH",
+    "currency0Decimals": 18,
+    "currency1Decimals": 18,
+    "fee": 3000,
+    "tickSpacing": 60,
+    "comment": "currency0/currency1 are zero because DeployTestnet deploys two FaucetTokens and writes their real (address-sorted) addresses into the artifact. Both are 18-decimal; the pool starts at 1:1 and the off-chain FIXED_PRICE creates the arb gap, so price math is ordering-agnostic."
+  },
+  "avs": {
+    "threshold": 1,
+    "operatorSetId": 1,
+    "comment": "Single-operator demo quorum; raise for a multi-operator testnet."
+  }
+}

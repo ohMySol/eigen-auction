@@ -1,0 +1,36 @@
+{
+  "chainId": 1,
+  "name": "mainnet",
+  "uniswap": {
+    "poolManager": "0x000000000004444c5dc75cB358380D2e3dE08A90",
+    "stateView": "0x7fFE42C4a5DEeA5b0feC41C94C136Cf115597227",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+  },
+  "eigenlayer": {
+    "allocationManager": "0x948a420b8CC1d6BFd0B6087C2E7c344a2CD0bc39",
+    "delegationManager": "0x39053D51B77DC0d36036Fc1fCc8Cb819df8Ef37A",
+    "avsDirectory": "0x135DDa560e946695d6f155dACaFC6f1F25C1F5AF",
+    "rewardsCoordinator": "0x7750d328b314EfFa365A0402CcfD489B80B0adda",
+    "permissionController": "0x25E5F8B1E7aDf44518d35D5B2271f114e081f0E5",
+    "strategyManager": "0x858646372CC42E1A627fcE94aa7A7033e7CF075A",
+    "stakeStrategy": "0x93c4b944D05dfe6df7645A86cd2206016c51564D",
+    "stakeToken": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+    "comment": "stETH strategy + token. Used only if the demo exercises stake/slashing; commitWinner needs operator-set membership only."
+  },
+  "pool": {
+    "currency0": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "currency1": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "currency0Symbol": "USDC",
+    "currency1Symbol": "WETH",
+    "currency0Decimals": 6,
+    "currency1Decimals": 18,
+    "fee": 3000,
+    "tickSpacing": 60,
+    "comment": "V4 requires currency0 < currency1 by address: USDC (0xA0b8..) < WETH (0xC02a..). price convention = currency1 per currency0 = WETH per USDC; mind the 6/18 decimal gap in price math."
+  },
+  "avs": {
+    "threshold": 1,
+    "operatorSetId": 1,
+    "comment": "Single-operator demo quorum; raise for multi-operator testnet."
+  }
+}
