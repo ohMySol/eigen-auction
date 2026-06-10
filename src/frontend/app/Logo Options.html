@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EigenAuction — Logo Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0c0e12; --surface:#15181e; --surface-2:#1a1e25; --tile:#0f1217;
+    --line:#242932; --line-2:#2e343f; --text:#e8ebf0; --mut:#8a93a3; --dim:#5c6472;
+    --accent:#2fe0a8; --ink:#04140e; --blue:#6aa0ff;
+    --ui:'Space Grotesk',system-ui,sans-serif; --mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--ui);-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1180px;margin:0 auto;padding:54px 26px 90px;}
+  .top{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:38px;}
+  h1{margin:0;font-size:30px;font-weight:600;letter-spacing:-0.02em;}
+  .top p{margin:8px 0 0;color:var(--mut);font-size:14px;max-width:54ch;}
+  .back{font-family:var(--mono);font-size:12px;color:var(--accent);text-decoration:none;border:1px solid var(--line-2);padding:8px 13px;border-radius:8px;white-space:nowrap;}
+  .back:hover{background:var(--surface);}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+  @media(max-width:900px){.grid{grid-template-columns:1fr 1fr;}}
+  @media(max-width:600px){.grid{grid-template-columns:1fr;}}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+  .tile{background:
+      linear-gradient(var(--tile),var(--tile)) padding-box;
+    height:180px;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--line);position:relative;}
+  .tile::after{content:attr(data-n);position:absolute;top:12px;left:14px;font-family:var(--mono);font-size:11px;color:var(--dim);}
+  .meta{padding:16px 18px 18px;}
+  .lockup{display:flex;align-items:center;gap:10px;margin-bottom:13px;}
+  .lockup .wm{font-size:17px;font-weight:600;letter-spacing:-0.01em;}
+  .lockup .wm b{color:var(--accent);font-weight:600;}
+  .name{font-size:13px;font-weight:600;letter-spacing:.02em;}
+  .why{margin:6px 0 0;color:var(--mut);font-size:12.5px;line-height:1.5;}
+  .rec{margin-left:8px;font-family:var(--mono);font-size:10px;color:var(--accent);border:1px solid color-mix(in oklab,var(--accent) 40%,var(--line));border-radius:5px;padding:2px 6px;vertical-align:middle;}
+  .section-note{margin:46px 0 0;padding:18px 20px;background:var(--surface);border:1px solid var(--line);border-radius:12px;color:var(--mut);font-size:13.5px;line-height:1.6;}
+  .section-note b{color:var(--text);}
+  svg{display:block;}
+  /* small lockup glyph */
+  .lg{width:26px;height:26px;flex:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>EigenAuction — Logo Options</h1>
+      <p>Six directions for the mark, drawn from the protocol's ideas: <b style="color:var(--text)">eigen</b> (linear algebra / λ), the <b style="color:var(--text)">first-arb slot</b>, the <b style="color:var(--text)">auction</b>, and <b style="color:var(--text)">value returning</b> to LPs. All built on the app's mint + near-black system.</p>
+    </div>
+    <a class="back" href="EigenAuction.html">← Back to app</a>
+  </div>
+
+  <div class="grid">
+
+    <!-- 1 Lambda Block -->
+    <div class="card">
+      <div class="tile" data-n="01">
+        <svg width="78" height="78" viewBox="0 0 64 64">
+          <rect x="6" y="6" width="52" height="52" rx="14" fill="var(--accent)"/>
+          <path d="M21 47 L33 18" stroke="var(--ink)" stroke-width="7" stroke-linecap="round"/>
+          <path d="M29 30 L43 47" stroke="var(--ink)" stroke-width="7" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="meta">
+        <div class="lockup">
+          <svg class="lg" viewBox="0 0 64 64"><rect x="6" y="6" width="52" height="52" rx="14" fill="var(--accent)"/><path d="M21 47 L33 18" stroke="var(--ink)" stroke-width="7" stroke-linecap="round"/><path d="M29 30 L43 47" stroke="var(--ink)" stroke-width="7" stroke-linecap="round"/></svg>
+          <span class="wm">Eigen<b>Auction</b></span>
+        </div>
+        <div class="name">Lambda Block</div>
+        <p class="why">The λ (eigenvalue) sits in a soft-cornered tile — instantly “eigen,” reads as an app icon, scales to a favicon. The most ownable and literal mark.</p>
+      </div>
+    </div>
+
+    <!-- 2 First Slot -->
+    <div class="card">
+      <div class="tile" data-n="02">
+        <svg width="78" height="78" viewBox="0 0 64 64">
+          <rect x="11" y="14" width="8" height="38" rx="2.5" fill="var(--accent)"/>
+          <rect x="25" y="26" width="8" height="26" rx="2.5" fill="var(--line-2)"/>
+          <rect x="39" y="34" width="8" height="18" rx="2.5" fill="var(--line-2)"/>
+          <rect x="53" y="40" width="6" height="12" rx="2.5" fill="var(--line-2)" opacity="0.7"/>
+        </svg>
+      </div>
+      <div class="meta">
+        <div class="lockup">
+          <svg class="lg" viewBox="0 0 64 64"><rect x="11" y="14" width="8" height="38" rx="2.5" fill="var(--accent)"/><rect x="25" y="26" width="8" height="26" rx="2.5" fill="var(--line-2)"/><rect x="39" y="34" width="8" height="18" rx="2.5" fill="var(--line-2)"/></svg>
+          <span class="wm">Eigen<b>Auction</b></span>
+        </div>
+        <div class="name">First Slot</div>
+        <p class="why">The tall lead bar is the won first-arb position; the queue falls away behind it. Speaks directly to what searchers bid for.</p>
+      </div>
+    </div>
+
+    <!-- 3 Basis Vectors -->
+    <div class="card">
+      <div class="tile" data-n="03">
+        <svg width="78" height="78" viewBox="0 0 64 64">
+          <g stroke="var(--accent)" stroke-width="6" stroke-linecap="round" fill="none">
+            <path d="M18 48 L18 18"/><path d="M18 48 L48 48"/>
+          </g>
+          <path d="M18 16 l-5 8 h10 z" fill="var(--accent)"/>
+          <path d="M50 48 l-8 -5 v10 z" fill="var(--accent)"/>
+          <circle cx="18" cy="48" r="4" fill="var(--blue)"/>
+        </svg>
+      </div>
+      <div class="meta">
+        <div class="lockup">
+          <svg class="lg" viewBox="0 0 64 64"><g stroke="var(--accent)" stroke-width="6" stroke-linecap="round" fill="none"><path d="M18 48 L18 18"/><path d="M18 48 L48 48"/></g><path d="M18 16 l-5 8 h10 z" fill="var(--accent)"/><path d="M50 48 l-8 -5 v10 z" fill="var(--accent)"/></svg>
+          <span class="wm">Eigen<b>Auction</b></span>
+        </div>
+        <div class="name">Basis Vectors</div>
+        <p class="why">Two eigenvectors springing from an origin — a quiet nod to the linear-algebra root. Technical, restrained, very “protocol.”</p>
+      </div>
+    </div>
+
+    <!-- 4 Recapture -->
+    <div class="card">
+      <div class="tile" data-n="04">
+        <svg width="78" height="78" viewBox="0 0 64 64">
+          <path d="M46 20 A18 18 0 1 0 50 33" fill="none" stroke="var(--accent)" stroke-width="6" stroke-linecap="round"/>
+          <path d="M47 11 l2 11 -11 -1 z" fill="var(--accent)"/>
+          <rect x="27" y="27" width="10" height="10" rx="2" fill="var(--accent)" transform="rotate(45 32 32)"/>
+        </svg>
+      </div>
+      <div class="meta">
+        <div class="lockup">
+          <svg class="lg" viewBox="0 0 64 64"><path d="M46 20 A18 18 0 1 0 50 33" fill="none" stroke="var(--accent)" stroke-width="6" stroke-linecap="round"/><path d="M47 11 l2 11 -11 -1 z" fill="var(--accent)"/><rect x="27" y="27" width="10" height="10" rx="2" fill="var(--accent)" transform="rotate(45 32 32)"/></svg>
+          <span class="wm">Eigen<b>Auction</b></span>
+        </div>
+        <div class="name">Recapture</div>
+        <p class="why">A loop returning to the pool at center — the LVR coming back to LPs instead of leaking out. Tells the core story in one glyph.</p>
+      </div>
+    </div>
+
+    <!-- 5 Ascending Bid -->
+    <div class="card">
+      <div class="tile" data-n="05">
+        <svg width="78" height="78" viewBox="0 0 64 64">
+          <rect x="11" y="40" width="13" height="12" rx="3" fill="var(--line-2)"/>
+          <rect x="26" y="28" width="13" height="24" rx="3" fill="color-mix(in oklab,var(--accent) 55%, var(--line-2))"/>
+          <rect x="41" y="14" width="13" height="38" rx="3" fill="var(--accent)"/>
+        </svg>
+      </div>
+      <div class="meta">
+        <div class="lockup">
+          <svg class="lg" viewBox="0 0 64 64"><rect x="11" y="40" width="13" height="12" rx="3" fill="var(--line-2)"/><rect x="26" y="28" width="13" height="24" rx="3" fill="color-mix(in oklab,var(--accent) 55%, var(--line-2))"/><rect x="41" y="14" width="13" height="38" rx="3" fill="var(--accent)"/></svg>
+          <span class="wm">Eigen<b>Auction</b></span>
+        </div>
+        <div class="name">Ascending Bid <span class="rec">selected</span></div>
+        <p class="why">Rising blocks = the bid climbing toward the clearing price. Friendly, fintech-clean; works as a loading/progress motif too.</p>
+      </div>
+    </div>
+
+    <!-- 6 LP Share Ring -->
+    <div class="card">
+      <div class="tile" data-n="06">
+        <svg width="78" height="78" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="20" fill="none" stroke="var(--line-2)" stroke-width="7"/>
+          <circle cx="32" cy="32" r="20" fill="none" stroke="var(--accent)" stroke-width="7" stroke-linecap="round"
+            stroke-dasharray="113 126" transform="rotate(-90 32 32)"/>
+          <circle cx="32" cy="32" r="4.5" fill="var(--accent)"/>
+        </svg>
+      </div>
+      <div class="meta">
+        <div class="lockup">
+          <svg class="lg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="20" fill="none" stroke="var(--line-2)" stroke-width="7"/><circle cx="32" cy="32" r="20" fill="none" stroke="var(--accent)" stroke-width="7" stroke-linecap="round" stroke-dasharray="113 126" transform="rotate(-90 32 32)"/></svg>
+          <span class="wm">Eigen<b>Auction</b></span>
+        </div>
+        <div class="name">LP Share Ring</div>
+        <p class="why">The accent arc is the 90% of LVR routed to LPs; the gap is what stays with the protocol. A literal share-of-value dial.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="section-note">
+    <b>Locked in: 05 · Ascending Bid.</b> &nbsp;Now live in the app header and favicon — rising blocks reading as the bid climbing toward the clearing price, in the mint-on-near-black system. Want me to also produce a wordmark-only lockup, a stacked (vertical) version, and a light-background variant? Say the word.
+  </div>
+</div>
+</body>
+</html>
