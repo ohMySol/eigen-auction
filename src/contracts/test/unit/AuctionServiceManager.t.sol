@@ -364,6 +364,35 @@ contract AuctionServiceManagerTest is Test {
         asm.challengeWinner(poolId, target, higherBidder, higherBid, bidderSig);
     }
 
+    // At exactly committedBlock + CHALLENGE_WINDOW the window is still open.
+    function test_challengeWinner_Succeeds_At_Exact_Window_Boundary() public {
+        uint256 target = block.number;
+        asm.commitWinner(poolId, target, winner, BID, _quorumSigs(target));
+        uint256 committedBlock = block.number;
+
+        // Roll to the last valid challenge block (= committedBlock + CHALLENGE_WINDOW).
+        vm.roll(committedBlock + ConstantsLib.CHALLENGE_WINDOW);
+
+        uint256 higherBid = BID + 1;
+        bytes memory bidderSig = _signBid(bidderKey, target, higherBid);
+        asm.challengeWinner(poolId, target, higherBidder, higherBid, bidderSig);
+        assertTrue(asm.getWinner(poolId, target).challenged, "challenge at exact boundary should succeed");
+    }
+
+    // One block past the exact boundary must revert.
+    function test_challengeWinner_Reverts_One_Past_Window_Boundary() public {
+        uint256 target = block.number;
+        asm.commitWinner(poolId, target, winner, BID, _quorumSigs(target));
+        uint256 committedBlock = block.number;
+
+        vm.roll(committedBlock + ConstantsLib.CHALLENGE_WINDOW + 1);
+
+        uint256 higherBid = BID + 1;
+        bytes memory bidderSig = _signBid(bidderKey, target, higherBid);
+        vm.expectRevert(ErrorsLib.AuctionServiceManager_ChallengeWindowClosed.selector);
+        asm.challengeWinner(poolId, target, higherBidder, higherBid, bidderSig);
+    }
+
     function test_challengeWinner_Reverts_When_Not_Higher_Bid() public {
         uint256 target = block.number;
         asm.commitWinner(poolId, target, winner, BID, _quorumSigs(target));

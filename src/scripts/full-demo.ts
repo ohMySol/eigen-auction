@@ -3,13 +3,11 @@
 //   the arb -> the hook skims 90% of the measured LVR to LPs -> the LP claims its share.
 // Ends with a with-vs-without-auction comparison.
 //
-// Prereqs: make anvil-fork; make fund deploy-fork setup-demo-lp; docker compose up -d redis;
+// Prereqs: make anvil-fork; make fund deploy-fork seed; docker compose up -d redis;
 //          make start-server (searcher-rpc on :INTENT_PORT). Then: npm run demo:full
 //
 // .env: FIXED_PRICE set off the pool start (e.g. 0.000476 ~ 2100 USDC/WETH) so an arb exists.
 import "dotenv/config";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import Redis from "ioredis";
 import { privateKeyToAccount } from "viem/accounts";
 import {
@@ -19,7 +17,7 @@ import {
 import { config, poolKey, requireOperatorKeys } from "../shared/config";
 import { getPoolId } from "../shared/poolId";
 import { signIntent, signBid } from "../shared/sign";
-import { settlerAbi, auctionServiceManagerAbi } from "../shared/abi";
+import { settlerAbi, auctionServiceManagerAbi, eigenAuctionHookAbi } from "../shared/abi";
 import { publicClient } from "../shared/config";
 import { RedisMempool } from "../backend/searcher-rpc/mempool";
 import { RedisBidQueue } from "../backend/searcher-rpc/bid-mempool";
@@ -44,15 +42,10 @@ const hookEventsAbi = [
         { name: "bidAmount", type: "uint256", indexed: false }] },
 ] as const;
 
-const demoLpAbi = [
-    { type: "function", name: "claim", stateMutability: "nonpayable", inputs: [
-        { name: "key", type: "tuple", components: [
-            { name: "currency0", type: "address" }, { name: "currency1", type: "address" },
-            { name: "fee", type: "uint24" }, { name: "tickSpacing", type: "int24" },
-            { name: "hooks", type: "address" }] },
-        { name: "hook", type: "address" }, { name: "tickLower", type: "int24" }, { name: "tickUpper", type: "int24" }],
-      outputs: [] },
-] as const;
+// The seeded in-hook LP position (see SeedLiquidity.s.sol): full range for tickSpacing 60, salt 0.
+const LP_TICK_LOWER = -887220;
+const LP_TICK_UPPER = 887220;
+const ZERO_SALT = `0x${"00".repeat(32)}` as Hex;
 
 const wallet = (pk: Hex) => createWalletClient({ account: privateKeyToAccount(pk), transport: http(config.rpcUrl) });
 
@@ -67,17 +60,10 @@ async function post(path: string, body: unknown) {
     if (!res.ok) throw new Error(`${path} -> ${res.status} ${await res.text()}`);
 }
 
-function loadDemoLP(): Address {
-    const dir = process.env.DEPLOYMENTS_DIR ?? "deployments";
-    const file = resolve(dir, `${config.chainId}.demo.json`);
-    return JSON.parse(readFileSync(file, "utf8")).demoLP as Address;
-}
-
 const log = (s = "") => console.log(s);
 
 async function main() {
     const poolId = getPoolId(poolKey);
-    const demoLp = loadDemoLP();
     const { operatorPk } = requireOperatorKeys();
     const operator = privateKeyToAccount(operatorPk);
     const userPk = (process.env.DEPLOYER_PK ?? "").trim() as Hex;
@@ -144,17 +130,18 @@ async function main() {
     log(`hook skimmed LVR to LPs: ${formatUnits(lvrToLPs, rewardDec)} ${rewardSym}`);
     log(`pool sqrtPriceX96 after: ${(await getSlot0(poolId)).sqrtPriceX96}\n`);
 
-    // ---- 7. LP claims its reward ----
+    // ---- 7. LP claims its reward (the deployer is the in-hook LP seeded by `make seed`) ----
     const rewardToken = rewardIdx === 0 ? poolKey.currency0 : poolKey.currency1;
+    const keyStruct = { currency0: poolKey.currency0, currency1: poolKey.currency1, fee: poolKey.fee, tickSpacing: poolKey.tickSpacing, hooks: poolKey.hooks } as const;
     const balBefore = await publicClient.readContract({ address: rewardToken, abi: erc20Abi, functionName: "balanceOf", args: [user.address] });
-    await wallet(userPk).writeContract({ address: demoLp, abi: demoLpAbi, functionName: "claim",
-        args: [{ currency0: poolKey.currency0, currency1: poolKey.currency1, fee: poolKey.fee, tickSpacing: poolKey.tickSpacing, hooks: poolKey.hooks }, config.hook, -887220, 887220], chain: null });
+    await wallet(userPk).writeContract({ address: config.hook, abi: eigenAuctionHookAbi, functionName: "claimRewards",
+        args: [keyStruct, LP_TICK_LOWER, LP_TICK_UPPER, ZERO_SALT], chain: null });
     const balAfter = await publicClient.readContract({ address: rewardToken, abi: erc20Abi, functionName: "balanceOf", args: [user.address] });
-    log("=== 7. LP claimed rewards (DemoLP.claim -> hook.claimRewards) ===");
+    log("=== 7. LP claimed rewards (hook.claimRewards) ===");
     log(`LP received: ${formatUnits(balAfter - balBefore, rewardDec)} ${rewardSym}\n`);
 
     // ---- 8. With vs without the auction ----
-    const totalLvr = (lvrToLPs * 10n) / 9n; // LPs got 90%
+    const totalLvr = (lvrToLPs * 10n) / 9n; // LPs got 90% - a hardcoded display for the demo
     log("=== 8. Value captured: with vs without the EigenAuction ===");
     log(`  without auction : LPs get 0, ~${formatUnits(totalLvr, rewardDec)} ${rewardSym} leaks to the arber/builder`);
     log(`  with auction    : LPs get ${formatUnits(lvrToLPs, rewardDec)} ${rewardSym} (90%), arber keeps 10%`);

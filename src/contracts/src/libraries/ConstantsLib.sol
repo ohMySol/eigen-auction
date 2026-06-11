@@ -12,5 +12,5 @@ library ConstantsLib {
     uint32 public constant OPERATOR_SET_ID = 1;
 
     /// @notice Number of blocks without a settlement after which public swaps are re-allowed.
-    uint256 public constant FALLBACK_PERIOD = 64;
+    uint256 public constant FALLBACK_PERIOD = 5;
 }
