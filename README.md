@@ -157,4 +157,4 @@ make build         # compile contracts only
 
 - [src/backend/README.md](src/backend/README.md) — operator node + searcher-rpc architecture
 - [src/frontend/README.md](src/frontend/README.md) — React app, wagmi hooks, deployment artifact
-- [DEMO_GUIDE.md](DEMO_GUIDE.md) — step-by-step testnet deployment and demo walkthrough
+- [src/contracts/README.md](src/contracts/README.md) — smart contracts part: AVS + hook + settler
