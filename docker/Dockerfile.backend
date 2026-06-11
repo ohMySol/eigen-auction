@@ -3,9 +3,12 @@
 FROM node:20-alpine
 WORKDIR /app
 
+# node-gyp needs Python + C build tools (for native modules like utf-8-validate used by ws).
+RUN apk add --no-cache python3 make g++
+
 # Install deps first so the layer is cached when only source changes.
 COPY package*.json tsconfig.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 # Backend sources only (the Foundry contracts under src/contracts are not needed at runtime).
 COPY src/shared ./src/shared

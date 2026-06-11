@@ -13,9 +13,14 @@ services:
     command: npm run start-server
     env_file: .env
     # Reach the chain on the host (Anvil/fork). Set RPC_URL=http://host.docker.internal:8545 in .env.
+    # For Sepolia set RPC_URL to your public endpoint instead.
     environment:
       REDIS_URL: redis://redis:6379
     extra_hosts: ["host.docker.internal:host-gateway"]
+    # The deploy script writes deployments/<CHAIN_ID>.json on the host; mount it so the service reads
+    # the fresh artifact without rebuilding the image.
+    volumes:
+      - ./deployments:/app/deployments:ro
     ports: ["8088:8088"]
     depends_on:
       redis:
@@ -33,6 +38,26 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
     extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./deployments:/app/deployments:ro
     depends_on:
       redis:
         condition: service_healthy
+
+  # Static Vite SPA served by nginx on :8080. These are BUILD-TIME args — Vite bakes them into the
+  # JS bundle. Rebuild the image with `docker compose build frontend` after a redeploy or env change.
+  #
+  # VITE_RPC_URL  - the RPC the browser uses to read chain state (public Sepolia endpoint or local anvil).
+  # VITE_INTENT_URL - the URL the browser POSTs intents/bids to. searcher-rpc publishes :8088 on the
+  # host, so the default http://localhost:8088 works when judges open http://localhost:8080.
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        VITE_CHAIN_ID: ${CHAIN_ID:-11155111}
+        VITE_RPC_URL: ${RPC_URL:-}
+        VITE_INTENT_URL: ${VITE_INTENT_URL:-http://localhost:8088}
+    ports: ["8080:80"]
+    depends_on:
+      - searcher-rpc

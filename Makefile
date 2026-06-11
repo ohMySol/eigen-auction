@@ -1,17 +1,22 @@
-# Fork-mode local stack for the EigenAuction LVR hook.
+# EigenAuction LVR hook — local + testnet development stack.
 #
-# Flow:
-#   make anvil-fork                       # terminal 1: fork mainnet (keeps chainId 1)
-#   make fund deploy-fork seed            # terminal 2: fund + deploy + seed pool liquidity
+# ── Sepolia testnet (judges / live demo) ─────────────────────────────────────────────────
+#   1. Fill .env (SEPOLIA_RPC_URL, DEPLOYER_PK, OPERATOR_PK, CHAIN_ID=11155111, RPC_URL=SEPOLIA_RPC_URL)
+#   2. make deploy-testnet                # deploys contracts, writes deployments/11155111.json
+#   3. export VITE_RPC_URL=<sepolia_rpc> VITE_CHAIN_ID=11155111
+#   4. make up                            # builds + starts all 4 containers → http://localhost:8080
+#
+# ── Local mainnet fork (development) ─────────────────────────────────────────────────────
+#   make anvil-fork                       # terminal 1: fork mainnet (chainId 1)
+#   make fund deploy-fork seed            # terminal 2: fund + deploy + seed LP
 #   docker compose up -d redis
-#   make start-server                     # searcher-rpc (keep running)
-#   make demo                             # simple one-shot end-to-end (arb + intent)
+#   make start-server                     # searcher-rpc
+#   make demo                             # one-shot arb demo
+#   make demo-full                        # full narrated demo (bids → auction → LP claim)
+#   make frontend-dev                     # Vite dev server with hot-reload
 #
-# Full narrated demo (bids -> auction -> winner settles -> LP claims):
-#   make fund deploy-fork setup-demo-lp   # (after anvil-fork + redis + start-server)
-#   make demo-full
-#
-# Required in .env: MAINNET_RPC_URL, DEPLOYER_PK, OPERATOR_PK, SETTLER_CALLER_PK, RPC_URL, CHAIN_ID, REDIS_URL
+# Required in .env: MAINNET_RPC_URL, SEPOLIA_RPC_URL, DEPLOYER_PK, OPERATOR_PK, SETTLER_CALLER_PK,
+#                   RPC_URL, CHAIN_ID, REDIS_URL
 include .env
 export
 
@@ -30,7 +35,7 @@ WETH_BAL := 0x00000000000000000000000000000000000000000000010f0cf064dd59200000
 # 10000 ETH.
 ETH_BAL := 0x21e19e0c9bab2400000
 
-.PHONY: anvil-fork fund deploy-fork seed setup-demo-lp start-server start-operator demo demo-full build test
+.PHONY: anvil-fork fund deploy-fork deploy-testnet seed start-server start-operator demo demo-full build test frontend-dev frontend-build up
 
 ## Start a mainnet fork. --auto-impersonate lets fund targets send from whales without unlocking each.
 anvil-fork:
@@ -57,19 +62,23 @@ fund:
 		cast rpc anvil_setStorageAt $(USDC) $$(cast index address $$a 9) $(USDC_BAL) --rpc-url $(RPC_URL); \
 	done
 
-## Deploy our contracts + register operator + init pool; writes deployments/<CHAIN_ID>.json.
+## Deploy our 3 contracts + register operator + init pool; writes deployments/<CHAIN_ID>.json. Uses the
+## canonical config-driven Deploy script against the fork RPC (chainId 1 = mainnet fork, real tokens).
 deploy-fork:
-	forge script $(CONTRACTS)/script/DeployFork.s.sol \
+	forge script $(CONTRACTS)/script/Deploy.s.sol \
 		--root $(CONTRACTS) --rpc-url $(RPC_URL) --broadcast -vvv
 
-## Seed pool liquidity (assumes `fund` has run so the deployer holds USDC + WETH).
+## Deploy the full system to Sepolia: FaucetTokens + protocol + real EigenLayer operator registration
+## + seeded LP. Writes deployments/11155111.json. Requires SEPOLIA_RPC_URL, DEPLOYER_PK, OPERATOR_PK
+## (both funded with Sepolia ETH). Append `--verify` with ETHERSCAN_API_KEY set to verify on Etherscan.
+deploy-testnet:
+	forge script $(CONTRACTS)/script/DeployTestnet.s.sol \
+		--root $(CONTRACTS) --rpc-url $(SEPOLIA_RPC_URL) --broadcast -vvv
+
+## Seed a claimable in-range LP through the hook (assumes `fund` has run so the deployer holds the
+## pair). The position is attributed to the deployer, so it can claim its LVR rewards in the demo.
 seed:
 	forge script $(CONTRACTS)/script/SeedLiquidity.s.sol \
-		--root $(CONTRACTS) --rpc-url $(RPC_URL) --broadcast -vvv
-
-## Deploy + fund + seed a claimable DemoLP for the full demo; writes deployments/<CHAIN_ID>.demo.json.
-setup-demo-lp:
-	forge script $(CONTRACTS)/script/SetupDemoLP.s.sol \
 		--root $(CONTRACTS) --rpc-url $(RPC_URL) --broadcast -vvv
 
 build:
@@ -87,6 +96,19 @@ start-operator:
 demo:
 	npm run demo
 
-## Full narrated end-to-end demo. Prereqs: deploy-fork + setup-demo-lp done, redis + start-server up.
+## Full narrated end-to-end demo. Prereqs: deploy-fork + seed done, redis + start-server up.
 demo-full:
 	npm run demo:full
+
+## Run the frontend in dev mode with hot-reload (reads deployments/<CHAIN_ID>.json live).
+frontend-dev:
+	npm run frontend
+
+## Build the production frontend bundle into src/frontend/dist/.
+frontend-build:
+	npm run frontend:build
+
+## Start the full docker stack (all 4 services). Prereqs: deploy-testnet done, .env populated.
+## Open http://localhost:8080 after this completes.
+up:
+	docker compose up --build
