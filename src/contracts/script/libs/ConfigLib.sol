@@ -31,7 +31,7 @@ struct NetworkConfig {
     uint256 threshold;
 }
 
-/// @notice Addresses produced by a deployment — the generated output written to
+/// @notice Deployment artifact produced by a deployment — the generated output written to
 /// `deployments/<chainId>.json` and consumed by the backend/frontend as the single source of truth.
 struct Deployment {
     uint256 chainId;
@@ -56,87 +56,92 @@ struct Deployment {
 library ConfigLib {
     using stdJson for string;
 
-    // config/ and deployments/ live at the repo root (shared by contracts + backend + frontend),
-    // which is two levels above the Foundry root (src/contracts).
-    function repoRoot(Vm vm) internal view returns (string memory) {
-        return string.concat(vm.projectRoot(), "/../..");
+    /// @dev config/ and deployments/ live at the repo root (shared by contracts + backend + frontend),
+    /// which is two levels above the Foundry root (src/contracts).
+    function repoRoot(Vm vm) internal view returns (string memory rootDir) {
+        rootDir = string.concat(vm.projectRoot(), "/../..");
+    }
+
+    /// @dev Constructs the absolute path to a config or deployment JSON for a chain.
+    /// @param vm The forge VM handle (libraries are stateless, so it must be passed in).
+    /// @param suffix The path prefix under the repo root, e.g. "/config/networks/" or "/deployments/".
+    /// @param chainId The chain ID the file is keyed by.
+    function getPath(Vm vm, string memory suffix, uint256 chainId) internal view returns (string memory) {
+        return string.concat(repoRoot(vm), suffix, vm.toString(chainId), ".json");
     }
 
     /// @dev Reads `config/networks/<chainId>.json` and decodes it into a NetworkConfig.
-    function readNetwork(Vm vm, uint256 chainId) internal view returns (NetworkConfig memory cfg) {
-        string memory path =
-            string.concat(repoRoot(vm), "/config/networks/", vm.toString(chainId), ".json");
+    function readNetwork(Vm vm, uint256 chainId) internal view returns (NetworkConfig memory config) {
+        string memory path = getPath(vm, "/config/networks/", chainId);
         string memory json = vm.readFile(path);
 
-        cfg.poolManager = json.readAddress(".uniswap.poolManager");
-        cfg.stateView = json.readAddress(".uniswap.stateView");
-        cfg.permit2 = json.readAddress(".uniswap.permit2");
+        config.poolManager = json.readAddress(".uniswap.poolManager");
+        config.stateView = json.readAddress(".uniswap.stateView");
+        config.permit2 = json.readAddress(".uniswap.permit2");
 
-        cfg.allocationManager = json.readAddress(".eigenlayer.allocationManager");
-        cfg.delegationManager = json.readAddress(".eigenlayer.delegationManager");
-        cfg.avsDirectory = json.readAddress(".eigenlayer.avsDirectory");
-        cfg.rewardsCoordinator = json.readAddress(".eigenlayer.rewardsCoordinator");
-        cfg.permissionController = json.readAddress(".eigenlayer.permissionController");
-        cfg.strategyManager = json.readAddress(".eigenlayer.strategyManager");
-        cfg.stakeStrategy = json.readAddress(".eigenlayer.stakeStrategy");
-        cfg.stakeToken = json.readAddress(".eigenlayer.stakeToken");
+        config.allocationManager = json.readAddress(".eigenlayer.allocationManager");
+        config.delegationManager = json.readAddress(".eigenlayer.delegationManager");
+        config.avsDirectory = json.readAddress(".eigenlayer.avsDirectory");
+        config.rewardsCoordinator = json.readAddress(".eigenlayer.rewardsCoordinator");
+        config.permissionController = json.readAddress(".eigenlayer.permissionController");
+        config.strategyManager = json.readAddress(".eigenlayer.strategyManager");
+        config.stakeStrategy = json.readAddress(".eigenlayer.stakeStrategy");
+        config.stakeToken = json.readAddress(".eigenlayer.stakeToken");
 
-        cfg.currency0 = json.readAddress(".pool.currency0");
-        cfg.currency1 = json.readAddress(".pool.currency1");
-        cfg.currency0Decimals = uint8(json.readUint(".pool.currency0Decimals"));
-        cfg.currency1Decimals = uint8(json.readUint(".pool.currency1Decimals"));
-        cfg.fee = uint24(json.readUint(".pool.fee"));
-        cfg.tickSpacing = int24(json.readInt(".pool.tickSpacing"));
+        config.currency0 = json.readAddress(".pool.currency0");
+        config.currency1 = json.readAddress(".pool.currency1");
+        config.currency0Decimals = uint8(json.readUint(".pool.currency0Decimals"));
+        config.currency1Decimals = uint8(json.readUint(".pool.currency1Decimals"));
+        config.fee = uint24(json.readUint(".pool.fee"));
+        config.tickSpacing = int24(json.readInt(".pool.tickSpacing"));
 
-        cfg.threshold = json.readUint(".avs.threshold");
+        config.threshold = json.readUint(".avs.threshold");
     }
 
     /// @dev Reads back a previously written `deployments/<chainId>.json` (e.g. for SeedLiquidity).
-    function readDeployment(Vm vm, uint256 chainId) internal view returns (Deployment memory d) {
-        string memory path =
-            string.concat(repoRoot(vm), "/deployments/", vm.toString(chainId), ".json");
+    function readDeployment(Vm vm, uint256 chainId) internal view returns (Deployment memory deployment) {
+        string memory path = getPath(vm, "/deployments/", chainId);
         string memory json = vm.readFile(path);
 
-        d.chainId = chainId;
-        d.poolManager = json.readAddress(".poolManager");
-        d.stateView = json.readAddress(".stateView");
-        d.auctionServiceManager = json.readAddress(".auctionServiceManager");
-        d.hook = json.readAddress(".hook");
-        d.settler = json.readAddress(".settler");
-        d.currency0 = json.readAddress(".pool.currency0");
-        d.currency1 = json.readAddress(".pool.currency1");
-        d.currency0Decimals = uint8(json.readUint(".pool.currency0Decimals"));
-        d.currency1Decimals = uint8(json.readUint(".pool.currency1Decimals"));
-        d.fee = uint24(json.readUint(".pool.fee"));
-        d.tickSpacing = int24(json.readInt(".pool.tickSpacing"));
-        d.poolId = json.readBytes32(".pool.poolId");
+        deployment.chainId = chainId;
+        deployment.poolManager = json.readAddress(".poolManager");
+        deployment.stateView = json.readAddress(".stateView");
+        deployment.auctionServiceManager = json.readAddress(".auctionServiceManager");
+        deployment.hook = json.readAddress(".hook");
+        deployment.settler = json.readAddress(".settler");
+        deployment.currency0 = json.readAddress(".pool.currency0");
+        deployment.currency1 = json.readAddress(".pool.currency1");
+        deployment.currency0Decimals = uint8(json.readUint(".pool.currency0Decimals"));
+        deployment.currency1Decimals = uint8(json.readUint(".pool.currency1Decimals"));
+        deployment.fee = uint24(json.readUint(".pool.fee"));
+        deployment.tickSpacing = int24(json.readInt(".pool.tickSpacing"));
+        deployment.poolId = json.readBytes32(".pool.poolId");
     }
 
     /// @dev Writes `deployments/<chainId>.json` in the exact shape the backend config loader expects.
-    function writeDeployment(Vm vm, Deployment memory d) internal {
+    function writeDeployment(Vm vm, Deployment memory deployment) internal {
         string memory obj = "deployment";
-        vm.serializeUint(obj, "chainId", d.chainId);
-        vm.serializeAddress(obj, "poolManager", d.poolManager);
-        vm.serializeAddress(obj, "stateView", d.stateView);
-        vm.serializeAddress(obj, "auctionServiceManager", d.auctionServiceManager);
-        vm.serializeAddress(obj, "hook", d.hook);
-        vm.serializeAddress(obj, "settler", d.settler);
+        vm.serializeUint(obj, "chainId", deployment.chainId);
+        vm.serializeAddress(obj, "poolManager", deployment.poolManager);
+        vm.serializeAddress(obj, "stateView", deployment.stateView);
+        vm.serializeAddress(obj, "auctionServiceManager", deployment.auctionServiceManager);
+        vm.serializeAddress(obj, "hook", deployment.hook);
+        vm.serializeAddress(obj, "settler", deployment.settler);
 
         // Nested "pool" object, mirroring config/networks and the artifact schema.
         string memory poolObj = "pool";
-        vm.serializeAddress(poolObj, "currency0", d.currency0);
-        vm.serializeAddress(poolObj, "currency1", d.currency1);
-        vm.serializeUint(poolObj, "currency0Decimals", d.currency0Decimals);
-        vm.serializeUint(poolObj, "currency1Decimals", d.currency1Decimals);
-        vm.serializeUint(poolObj, "fee", d.fee);
-        vm.serializeInt(poolObj, "tickSpacing", d.tickSpacing);
-        string memory poolJson = vm.serializeBytes32(poolObj, "poolId", d.poolId);
+        vm.serializeAddress(poolObj, "currency0", deployment.currency0);
+        vm.serializeAddress(poolObj, "currency1", deployment.currency1);
+        vm.serializeUint(poolObj, "currency0Decimals", deployment.currency0Decimals);
+        vm.serializeUint(poolObj, "currency1Decimals", deployment.currency1Decimals);
+        vm.serializeUint(poolObj, "fee", deployment.fee);
+        vm.serializeInt(poolObj, "tickSpacing", deployment.tickSpacing);
+        string memory poolJson = vm.serializeBytes32(poolObj, "poolId", deployment.poolId);
 
         vm.serializeString(obj, "pool", poolJson);
-        string memory finalJson = vm.serializeUint(obj, "deployedBlock", d.deployedBlock);
+        string memory finalJson = vm.serializeUint(obj, "deployedBlock", deployment.deployedBlock);
 
-        string memory outPath =
-            string.concat(repoRoot(vm), "/deployments/", vm.toString(d.chainId), ".json");
+        string memory outPath = getPath(vm, "/deployments/", deployment.chainId);
         vm.writeJson(finalJson, outPath);
     }
 }

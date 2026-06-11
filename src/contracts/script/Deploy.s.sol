@@ -1,82 +1,71 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.27;
+pragma solidity ^0.8.0;
 
-import {Script, console2} from "forge-std/Script.sol";
-import {ERC1967Proxy} from "openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {IAVSDirectory} from "eigenlayer-contracts/src/contracts/interfaces/IAVSDirectory.sol";
-import {IRewardsCoordinator} from "eigenlayer-contracts/src/contracts/interfaces/IRewardsCoordinator.sol";
-import {IAllocationManager} from "eigenlayer-contracts/src/contracts/interfaces/IAllocationManager.sol";
-import {IPermissionController} from "eigenlayer-contracts/src/contracts/interfaces/IPermissionController.sol";
-import {ISlashingRegistryCoordinator} from "eigenlayer-middleware/src/interfaces/ISlashingRegistryCoordinator.sol";
-import {IStakeRegistry} from "eigenlayer-middleware/src/interfaces/IStakeRegistry.sol";
-import {Hooks} from "v4-core/libraries/Hooks.sol";
-import {HookMiner} from "v4-hooks-public/src/utils/HookMiner.sol";
+import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
+import {PoolKey} from "v4-core/types/PoolKey.sol";
+import {Currency} from "v4-core/types/Currency.sol";
 
-import {AuctionServiceManager} from "../src/AuctionServiceManager.sol";
-import {EigenAuctionHook} from "../src/EigenAuctionHook.sol";
+import {DeployCore} from "./base/DeployCore.sol";
+import {ConfigLib, NetworkConfig} from "./libs/ConfigLib.sol";
 
 /// @title Deploy
 /// @author ohMySol
-/// @notice Deploys the AVS-secured arbitrage-auction system: the `AuctionServiceManager` (behind an
-/// ERC1967 proxy) and the `EigenAuctionHook` (at a CREATE2 address mined for its permission flags).
+/// @notice Canonical deployment for any network whose token pair already exists on-chain — real
+/// mainnet, the mainnet fork (chainId 1), or a testnet configured with real tokens. Reuses the live
+/// Uniswap V4 + EigenLayer core from config/networks/<chainId>.json and deploys this project's three
+/// contracts (AuctionServiceManager proxy, EigenAuctionHook, Settler), creates the AVS operator set,
+/// registers the operator, initialises the pool, and writes deployments/<chainId>.json.
 ///
-/// Required env vars:
-///   POOL_MANAGER          — Uniswap V4 PoolManager address
-///   THRESHOLD             — minimum unique operator signatures to commit a winner
-///   OWNER                 — AVS owner (defaults to the broadcaster)
-///   REWARDS_INITIATOR     — AVS rewards initiator (defaults to the broadcaster)
-/// Optional EigenLayer core (default address(0) where the slashing upgrade is absent):
-///   AVS_DIRECTORY, REWARDS_COORDINATOR, REGISTRY_COORDINATOR, STAKE_REGISTRY,
-///   PERMISSION_CONTROLLER, ALLOCATION_MANAGER
+/// For a testnet with no token pair, use DeployTestnet (deploys FaucetTokens + seeds LP).
 ///
-/// Run: `forge script script/Deploy.s.sol --rpc-url <RPC> --broadcast`
-contract Deploy is Script {
-    /// @dev Canonical CREATE2 deployer proxy used by `forge script` for salted deployments.
-    address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+/// Funding and LP seeding are out of scope here (node-level / separate ops): for the fork they run from
+/// the Makefile (`make fund seed`) before/after this script.
+///
+/// Required env:
+///   DEPLOYER_PK  — deploys contracts; AVS owner + pool initialiser
+///   OPERATOR_PK  — the AVS operator that registers into the operator set
+/// Optional:
+///   DEPLOY_SQRT_PRICE_X96 — pool start price (defaults to ~the live market for the configured pair)
+///
+/// Run: `forge script script/Deploy.s.sol --rpc-url $RPC_URL --broadcast`
+contract Deploy is DeployCore {
+    function run() external {
+        NetworkConfig memory config = ConfigLib.readNetwork(vm, block.chainid);
+        require(
+            config.currency0 != address(0) && config.currency1 != address(0),
+            "Deploy: token pair not configured for this chain; use DeployTestnet to deploy mock tokens"
+        );
 
-    function run() external returns (AuctionServiceManager avs, EigenAuctionHook hook) {
-        vm.startBroadcast();
-        avs = _deployAvs();
-        hook = _deployHook(address(avs));
+        uint256 deployerPk = vm.envUint("DEPLOYER_PK");
+        uint256 operatorPk = vm.envUint("OPERATOR_PK");
+        address operator = vm.addr(operatorPk);
+        uint160 startSqrtPriceX96 = uint160(vm.envOr("DEPLOY_SQRT_PRICE_X96", _defaultSqrtPrice()));
+
+        // Step 1 — deploy + wire the protocol, then initialise the pool (deployer == AVS/hook owner).
+        vm.startBroadcast(deployerPk);
+        ProtocolContracts memory protocol = _deployProtocol(config, vm.addr(deployerPk));
+        PoolKey memory key = _poolKey(
+            config, 
+            address(protocol.hook), 
+            Currency.wrap(config.currency0), 
+            Currency.wrap(config.currency1)
+        );
+        IPoolManager(config.poolManager).initialize(key, startSqrtPriceX96);
         vm.stopBroadcast();
 
-        console2.log("AuctionServiceManager (proxy):", address(avs));
-        console2.log("EigenAuctionHook:            ", address(hook));
+        // Step 2 — register the operator into the AVS operator set.
+        vm.startBroadcast(operatorPk);
+        _registerOperator(config, address(protocol.avs), operator);
+        vm.stopBroadcast();
+
+        // Step 3 — persist the artifact the backend/frontend read.
+        _writeDeployment(config, key, protocol, config.currency0Decimals, config.currency1Decimals);
     }
 
-    /// @dev Deploys the AVS implementation and its initialised ERC1967 proxy. EigenLayer core
-    /// addresses are read inline (defaulting to address(0)) to keep the stack shallow.
-    function _deployAvs() internal returns (AuctionServiceManager avs) {
-        AuctionServiceManager impl = new AuctionServiceManager(
-            IAVSDirectory(vm.envOr("AVS_DIRECTORY", address(0))),
-            IRewardsCoordinator(vm.envOr("REWARDS_COORDINATOR", address(0))),
-            ISlashingRegistryCoordinator(vm.envOr("REGISTRY_COORDINATOR", address(0))),
-            IStakeRegistry(vm.envOr("STAKE_REGISTRY", address(0))),
-            IPermissionController(vm.envOr("PERMISSION_CONTROLLER", address(0))),
-            IAllocationManager(vm.envOr("ALLOCATION_MANAGER", address(0))),
-            vm.envUint("THRESHOLD")
-        );
-
-        bytes memory initData = abi.encodeCall(
-            AuctionServiceManager.initialize,
-            (vm.envOr("OWNER", msg.sender), vm.envOr("REWARDS_INITIATOR", msg.sender))
-        );
-        avs = AuctionServiceManager(address(new ERC1967Proxy(address(impl), initData)));
-    }
-
-    /// @dev Mines a hook address carrying the required permission flags, then deploys via CREATE2.
-    function _deployHook(address avsAddr) internal returns (EigenAuctionHook hook) {
-        address poolManager = vm.envAddress("POOL_MANAGER");
-        uint160 flags = uint160(
-            Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
-                | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
-        );
-        address hookOwner = vm.envOr("OWNER", msg.sender);
-        bytes memory args = abi.encode(poolManager, avsAddr, hookOwner);
-        (address hookAddr, bytes32 salt) =
-            HookMiner.find(CREATE2_DEPLOYER, flags, type(EigenAuctionHook).creationCode, args);
-
-        hook = new EigenAuctionHook{salt: salt}(poolManager, avsAddr, hookOwner);
-        require(address(hook) == hookAddr, "Deploy: hook address mismatch");
+    /// @dev Default pool start price for USDC(6)/WETH(18), already decimal-adjusted (~2000 USDC/WETH).
+    /// Override with DEPLOY_SQRT_PRICE_X96 for a different pair/price. Keep it distinct from the
+    /// off-chain FIXED_PRICE target so there is an arb gap for the demo to close.
+    function _defaultSqrtPrice() internal pure returns (uint256) {
+        return 1771595571142957166518320255467520;
     }
 }
