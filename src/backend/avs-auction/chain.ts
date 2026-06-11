@@ -1,6 +1,6 @@
 // Chain writes for the operator: commit the AVS winner, then settle the block.
 // Reads live in pool-price.ts; this module holds the two state-changing transactions.
-import { createWalletClient, http, type Hex, type Address } from "viem";
+import { createWalletClient, http, erc20Abi, maxUint256, type Hex, type Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { config, poolKey, publicClient, requireOperatorKeys } from "../../shared/config";
 import { auctionServiceManagerAbi, settlerAbi } from "../../shared/abi";
@@ -37,6 +37,7 @@ export async function commitWinner(
 // Step 1 arb rebalance (skipped if arb.amountSpecified == 0) then Step 2 intent fills, atomically.
 export async function settleAs(
     callerPk: `0x${string}`,
+    rewardAmount: bigint,
     arb: SwapParamsT,
     intents: SwapIntentT[],
 ): Promise<Hex> {
@@ -44,7 +45,7 @@ export async function settleAs(
         address: config.settler,
         abi: settlerAbi,
         functionName: "settle",
-        args: [poolKey, arb, intents],
+        args: [poolKey, rewardAmount, arb, intents],
         chain: null,
     });
     await publicClient.waitForTransactionReceipt({ hash });
@@ -52,7 +53,27 @@ export async function settleAs(
 }
 
 // Convenience: settle with the configured settler-caller key (the no-bid path, winner == operator).
-export async function settle(arb: SwapParamsT, intents: SwapIntentT[]): Promise<Hex> {
+export async function settle(rewardAmount: bigint, arb: SwapParamsT, intents: SwapIntentT[]): Promise<Hex> {
     const { settlerCallerPk } = requireOperatorKeys();
-    return settleAs(settlerCallerPk, arb, intents);
+    return settleAs(settlerCallerPk, rewardAmount, arb, intents);
+}
+
+// One-time approval: Settler.settle does transferFrom(caller, hook, rewardAmount) for the LP
+// reward, so the caller must have approved Settler to spend currency0. Call once on startup.
+export async function ensureSettlerApproval(callerPk: `0x${string}`): Promise<void> {
+    const caller = privateKeyToAccount(callerPk);
+    const currency0 = poolKey.currency0 as Address;
+    const allowance = await publicClient.readContract({
+        address: currency0, abi: erc20Abi, functionName: "allowance",
+        args: [caller.address, config.settler as Address],
+    });
+    if (allowance < maxUint256 / 2n) {
+        console.log("approving Settler to spend currency0 for LP rewards…");
+        const hash = await walletFor(callerPk).writeContract({
+            address: currency0, abi: erc20Abi, functionName: "approve",
+            args: [config.settler as Address, maxUint256], chain: null,
+        });
+        await publicClient.waitForTransactionReceipt({ hash });
+        console.log("approval confirmed");
+    }
 }

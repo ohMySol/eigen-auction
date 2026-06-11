@@ -13,7 +13,7 @@ import { externalPrice, priceToSqrtX96 } from "./cex-price";
 import { getSlot0, buildArbParams } from "./pool-price";
 import { collectBids, runAuction } from "./bid-collector";
 import { collectSignatures } from "./signer";
-import { commitWinner, settle } from "./chain";
+import { commitWinner, settle, ensureSettlerApproval } from "./chain";
 
 // Large exact-in cap; the pool swaps until it hits the target price and stops, so the cap only
 // needs to exceed the liquidity required to close the gap.
@@ -63,7 +63,8 @@ export async function runBlock(
     );
 
     await commitWinner(poolId, targetBlock, outcome.winner, outcome.bidAmount, signatures);
-    await settle(arb, intents);
+    // bidAmount is the reward the winning operator committed to paying LPs.
+    await settle(outcome.bidAmount, arb, intents);
 }
 
 // Long-running operator: react to each new block. Errors in one round are logged and swallowed so
@@ -74,6 +75,8 @@ async function main(): Promise<void> {
     const mempool = new RedisMempool(redis, poolId);
     const bidSource = new RedisBidQueue(redis, poolId);
 
+    const { settlerCallerPk } = requireOperatorKeys();
+    await ensureSettlerApproval(settlerCallerPk);
     console.log("avs-auction operator running");
     const unwatch = publicClient.watchBlockNumber({
         onBlockNumber: async () => {

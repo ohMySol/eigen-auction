@@ -1,19 +1,6 @@
 import { z } from "zod";
 import type { SwapIntentT } from "../../../shared/types";
-
-// 0x-prefixed hex of a fixed byte length (e.g. 20-byte address, 32-byte poolId).
-const hexBytes = (bytes: number) =>
-    z.string().regex(new RegExp(`^0x[0-9a-fA-F]{${bytes * 2}}$`), `expected ${bytes}-byte hex`);
-
-// Any 0x-prefixed hex string of even length (signature length is checked on-chain).
-const hex = z.string().regex(/^0x[0-9a-fA-F]*$/, "expected 0x-prefixed hex");
-
-// A non-negative integer delivered as a decimal string, coerced to bigint.
-// JSON has no bigint, so clients send these uint fields as strings.
-const uintString = z
-    .string()
-    .regex(/^\d+$/, "expected a non-negative integer string")
-    .transform((s) => BigInt(s));
+import { hexBytes, hex, uintString } from "./primitives";
 
 // Wire shape of POST /intent. Validates every field at the boundary, then transforms the
 // numeric strings into the bigint-typed SwapIntentT the rest of the backend works with.
