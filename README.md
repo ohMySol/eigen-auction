@@ -8,18 +8,17 @@ EigenAuction is a Uniswap V4 hook that eliminates Loss-versus-Rebalancing (LVR) 
 
 Every AMM suffers LVR: whenever the pool price diverges from the CEX price, arbitrageurs profit by pushing the pool back to fair value. That profit comes directly from LPs — it is a structural, unavoidable cost of providing liquidity. On Ethereum mainnet, LVR accounts for roughly 50–80% of LP losses on concentrated pools.
 
+## Current Project State
+This **project is in active development** so the code and documentation will change over the time. Once the project will be available in the testnet this section will mention this.
+
 ## The Solution
 
-EigenAuction replaces open arbitrage competition with a per-block sealed auction, modelled on [Angstrom](https://sorellalabs.xyz):
+EigenAuction replaces open arbitrage competition with a per-block sealed auction:
 
-1. Each block, EigenLayer-staked operators observe the pool vs CEX price gap and each compute how much arb profit they are willing to share with LPs (their bid)
-2. The AVS quorum selects the operator with the highest bid as the block's exclusive settler
-3. The winning operator calls `settle()`: pays their bid upfront to in-range LPs, then atomically executes the arb swap + all queued user swaps inside a single Uniswap V4 unlock
+1. Arbitrageurs see opportunity in the pool where the hook is connected and bid on our **/bid** endpoint for the right to execute arbitrage trade in the next block. 
+2. The AVS operators quorum selects the highest bid.
+3. The randomly selected operator calls `settle()`: transfers arbitrageur bid upfront to in-range LPs, then atomically executes the arb swap + all queued user swaps inside a single Uniswap V4 unlock.
 4. LPs receive arb profits proportional to their liquidity share; EigenLayer slashing punishes any operator that cheats
-
-Operators are the arbitrageurs — they are EigenLayer-restaked nodes with skin in the game, not anonymous MEV bots. The pool is locked to the winning operator for the block, preventing anyone else from front-running or sandwiching.
-
-**Current state (testnet demo):** single operator, `QUORUM_THRESHOLD = 1`. The operator commits itself as winner each block and settles immediately after the challenge window. The full multi-operator competitive quorum is the next milestone.
 
 ---
 
