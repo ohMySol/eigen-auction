@@ -4,12 +4,14 @@ EigenAuction is a Uniswap V4 hook that eliminates Loss-versus-Rebalancing (LVR) 
 
 ---
 
+## Current Project State
+This **project is in active development** so the code and documentation will change over the time. Once the project will be available in the testnet this section will mention this.
+
+---
+
 ## The Problem
 
 Every AMM suffers LVR: whenever the pool price diverges from the CEX price, arbitrageurs profit by pushing the pool back to fair value. That profit comes directly from LPs — it is a structural, unavoidable cost of providing liquidity. On Ethereum mainnet, LVR accounts for roughly 50–80% of LP losses on concentrated pools.
-
-## Current Project State
-This **project is in active development** so the code and documentation will change over the time. Once the project will be available in the testnet this section will mention this.
 
 ## The Solution
 
