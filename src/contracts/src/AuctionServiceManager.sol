@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import {ECDSA} from "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
+
 import {IAVSDirectory} from "eigenlayer-contracts/src/contracts/interfaces/IAVSDirectory.sol";
 import {IRewardsCoordinator} from "eigenlayer-contracts/src/contracts/interfaces/IRewardsCoordinator.sol";
 import {IAllocationManager, IAllocationManagerTypes} from "eigenlayer-contracts/src/contracts/interfaces/IAllocationManager.sol";
@@ -13,6 +14,7 @@ import {ISlashingRegistryCoordinator} from "eigenlayer-middleware/src/interfaces
 import {IStakeRegistry} from "eigenlayer-middleware/src/interfaces/IStakeRegistry.sol";
 import {ServiceManagerBase} from "eigenlayer-middleware/src/ServiceManagerBase.sol";
 import {IAVSRegistrar} from "eigenlayer-contracts/src/contracts/interfaces/IAVSRegistrar.sol";
+
 import {PoolId} from "v4-core/types/PoolId.sol";
 
 import {IAuctionServiceManager, AuctionResult} from "./interfaces/IAuctionServiceManager.sol";
@@ -54,6 +56,14 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
 
     /// @notice poolId ==> targetBlock ==> committed auction result.
     mapping(PoolId => mapping(uint256 => AuctionResult)) private _results;
+
+    /// @dev Restricts the IAVSRegistrar functions to be called only by EigenLayer's AllocationManager.
+    modifier onlyAllocationManager() {
+        if (msg.sender != address(_allocationManager)) {
+            revert ErrorsLib.AuctionServiceManager_NotAllocationManager();
+        }
+        _;
+    }
 
     /* CONSTRUCTOR */
 
@@ -105,10 +115,10 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
     }
 
     /// @notice Creates this AVS's operator set in EigenLayer with the given slashable strategies.
-    /// @dev Owner-only. Call once post-deployment; operators then join via
-    /// `AllocationManager.registerForOperatorSets`. Not part of the hook-facing interface because it
-    /// references `IStrategy`, whose import would otherwise pull EigenLayer's `^0.8.27` pragma into
-    /// the V4 (`=0.8.26`) hook compile unit.
+    /// @dev Owner-only. Call once post-deployment; operators then join via `AllocationManager.registerForOperatorSets`. 
+    /// This function is not a part of the IAuctionServiceManager interface because it
+    /// references `IStrategy`, which has inside SlashingLib with a `^0.8.27` pragma that would conflict with the 
+    /// V4's `=0.8.26` pragma if imported by consumer contracts like `EigenAuctionHook`.
     /// @param strategies Strategies (staked assets) slashable on a successful challenge.
     function createOperatorSet(IStrategy[] calldata strategies) external onlyOwner {
         IAllocationManagerTypes.CreateSetParams[] memory params = new IAllocationManagerTypes.CreateSetParams[](1);
@@ -123,14 +133,11 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
 
     /// @notice Sets the strategies and slash proportions applied to each signer on a successful
     /// challenge. Owner-only. `strategies` must match the operator set; proportions are in wads
-    /// (1e17 = 10%, 1e18 = 100%). Kept off the hook-facing interface for the same `IStrategy`
+    /// (1e17 = 10%, 1e18 = 100%). Kept off from the IAuctionServiceManager interface for the same `IStrategy`
     /// pragma reason as `createOperatorSet`.
     /// @param strategies Strategies to slash.
     /// @param wads Slash proportion per strategy, in wads. Same length as `strategies`.
-    function configureSlashing(IStrategy[] calldata strategies, uint256[] calldata wads)
-        external
-        onlyOwner
-    {
+    function configureSlashing(IStrategy[] calldata strategies, uint256[] calldata wads) external onlyOwner {
         if (strategies.length != wads.length) {
             revert ErrorsLib.AuctionServiceManager_SlashConfigLengthMismatch();
         }
@@ -142,19 +149,12 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
         }
     }
 
-    /* IAVSRegistrar — operator-set admission */
+    /* IAVSRegistrar — operator-set callbacks */
 
     // EigenLayer's AllocationManager defaults the AVS registrar to the AVS address itself when none is
-    // set, so this contract IS its own registrar. Without these hooks `registerForOperatorSets` would
-    // revert and no operator could ever join the set, making `commitWinner` permanently unsatisfiable.
-
-    /// @dev Restricts the IAVSRegistrar hooks to calls from EigenLayer's AllocationManager.
-    modifier onlyAllocationManager() {
-        if (msg.sender != address(_allocationManager)) {
-            revert ErrorsLib.AuctionServiceManager_NotAllocationManager();
-        }
-        _;
-    }
+    // set, so this contract IS its own registrar. Without these callback functions below `registerForOperatorSets` 
+    // would revert and no operator could ever join the set, making `commitWinner` permanently unsatisfiable.
+    // I didn't implement a separate registrar contract because the logic is trivial.
 
     /// @inheritdoc IAVSRegistrar
     /// @dev Called by AllocationManager when an operator joins. Admission is permissionless — the
@@ -191,7 +191,7 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
         return avs == address(this);
     }
 
-    /* WINNER COMMITMENT */
+    /* AVS LOGIC */
 
     /// @inheritdoc IAuctionServiceManager
     function commitWinner(
@@ -222,8 +222,6 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
 
         emit EventsLib.WinnerCommitted(poolId, targetBlock, winner, bidAmount);
     }
-
-    /* CHALLENGE */
 
     /// @inheritdoc IAuctionServiceManager
     /// @dev Fraud-proof format: `higherBidder` must have signed
@@ -266,12 +264,7 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
     /* VIEW FUNCTIONS */
 
     /// @inheritdoc IAuctionServiceManager
-    function getWinner(PoolId poolId, uint256 blockNumber)
-        external
-        view
-        override
-        returns (AuctionResult memory)
-    {
+    function getWinner(PoolId poolId, uint256 blockNumber) external view returns (AuctionResult memory) {
         return _results[poolId][blockNumber];
     }
 
