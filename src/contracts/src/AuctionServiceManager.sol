@@ -151,7 +151,7 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
 
     /* IAVSRegistrar — operator-set callbacks */
 
-    // EigenLayer's AllocationManager defaults the AVS registrar to the AVS address itself when none is
+    // Note: EigenLayer's AllocationManager defaults the AVS registrar to the AVS address itself when none is
     // set, so this contract IS its own registrar. Without these callback functions below `registerForOperatorSets` 
     // would revert and no operator could ever join the set, making `commitWinner` permanently unsatisfiable.
     // I didn't implement a separate registrar contract because the logic is trivial.
@@ -224,10 +224,6 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
     }
 
     /// @inheritdoc IAuctionServiceManager
-    /// @dev Fraud-proof format: `higherBidder` must have signed
-    /// `ethSignedMessageHash(keccak256(abi.encodePacked(poolId, targetBlock, higherBidAmount)))`.
-    /// If slashing strategies are not yet configured the result is still marked as challenged
-    /// and `WinnerChallenged` is emitted — only the on-chain slash call is skipped.
     function challengeWinner(
         PoolId poolId,
         uint256 targetBlock,
@@ -268,7 +264,15 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
         return _results[poolId][blockNumber];
     }
 
-    /* EIGENLAYER VIEW OVERRIDES */
+    /* EIGENLAYER SERVICE MANAGER BASE VIEW OVERRIDES */
+
+    // Note: ServiceManagerBase reads strategies from `_registryCoordinator` and `_stakeRegistry` - the old middleware path I am not using. 
+    // That's why I am passing address(0) for both `ISlashingRegistryCoordinator` and `IStakeRegistry` in my `DeployCore` script.
+    // It also means the dead functions below from ServiceManagerBase that call _registryCoordinator and _stakeRegistry would revert if
+    // ever triggered (for example when EigenLayer's indexers queries them).
+    // I considered implementing them to return empty arrays, because the strategies are registered through `AllocationManager`.
+    // 
+    // Later I am planning to create a custom AuctionServiceManagerBase wihtout dead functions and keep it clean.
 
     /// @dev Return `new address[](0)` because we handle strategy configuration through `AllocationManager` 
     /// directly (via `createOperatorSet` and `configureSlashing`), not through the legacy StakeRegistry path.

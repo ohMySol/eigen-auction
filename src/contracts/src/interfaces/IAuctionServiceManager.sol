@@ -57,6 +57,8 @@ interface IAuctionServiceManager {
     /// `ethSignedMessageHash(keccak256(abi.encodePacked(poolId, targetBlock, higherBidAmount)))`.
     /// If valid, the result is marked as challenged and the signing operators are slashed
     /// via EigenLayer's AllocationManager (when configured). Callable by anyone.
+    /// If slashing strategies are not yet configured the result is still marked as challenged
+    /// and `WinnerChallenged` is emitted — only the on-chain slash call is skipped.
     ///
     /// @param poolId Pool the disputed result belongs to.
     /// @param targetBlock Block number of the disputed result.
