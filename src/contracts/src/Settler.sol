@@ -11,8 +11,10 @@ import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 
-import {ISettler, SwapIntent} from "./interfaces/ISettler.sol";
-import {IAuctionServiceManager, AuctionResult} from "./interfaces/IAuctionServiceManager.sol";
+import {ISettler} from "./interfaces/ISettler.sol";
+import {SwapIntent, INTENT_TYPEHASH} from "./types/SwapIntent.sol"; 
+import {IAuctionServiceManager} from "./interfaces/IAuctionServiceManager.sol";
+import {AuctionResult} from "./types/AuctionResult.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {EventsLib} from "./libraries/EventsLib.sol";
 
@@ -50,10 +52,6 @@ contract Settler is ISettler, IUnlockCallback {
 
     bytes32 private constant _DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
-
-    bytes32 private constant _INTENT_TYPEHASH = keccak256(
-        "SwapIntent(address user,bytes32 poolId,bool zeroForOne,uint128 amountIn,uint128 minAmountOut,uint64 nonce,uint64 deadline)"
-    );
 
     /* IMMUTABLES */
 
@@ -238,7 +236,7 @@ contract Settler is ISettler, IUnlockCallback {
 
     function _verifySignature(SwapIntent memory intent) private view {
         bytes32 structHash = keccak256(abi.encode(
-            _INTENT_TYPEHASH,
+            INTENT_TYPEHASH,
             intent.user,
             intent.poolId,
             intent.zeroForOne,

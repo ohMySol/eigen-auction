@@ -17,7 +17,8 @@ import {IAVSRegistrar} from "eigenlayer-contracts/src/contracts/interfaces/IAVSR
 
 import {PoolId} from "v4-core/types/PoolId.sol";
 
-import {IAuctionServiceManager, AuctionResult} from "./interfaces/IAuctionServiceManager.sol";
+import {IAuctionServiceManager} from "./interfaces/IAuctionServiceManager.sol";
+import {AuctionResult} from "./types/AuctionResult.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {EventsLib} from "./libraries/EventsLib.sol";
 import {ConstantsLib} from "./libraries/ConstantsLib.sol";

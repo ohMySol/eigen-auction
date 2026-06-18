@@ -5,33 +5,8 @@ import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {SwapParams} from "v4-core/types/PoolOperation.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 
+import {SwapIntent} from "../types/SwapIntent.sol";
 import {IAuctionServiceManager} from "./IAuctionServiceManager.sol";
-
-/// @notice An off-chain swap intent signed by the user.
-///
-/// Users sign this struct (EIP-712) and deliver it to the operator's private RPC rather than
-/// broadcasting a transaction. The winning operator batches received intents into `settle`.
-///
-/// @param user Signer and token source / recipient.
-/// @param poolId `PoolId.unwrap(key.toId())` — binds the intent to a specific pool,
-/// preventing cross-pool replay when the same settler serves multiple pools.
-/// @param zeroForOne Swap direction: currency0 → currency1 when `true`.
-/// @param amountIn Exact input amount the settler is authorised to pull from `user`.
-/// @param minAmountOut Minimum output the user accepts; the fill reverts if not met.
-/// @param nonce Single-use value for replay protection (bitmap scheme, not sequential).
-/// Users choose any unused 64-bit value; call `isNonceUsed` to check.
-/// @param deadline Latest `block.timestamp` at which this intent may be filled.
-/// @param signature 65-byte ECDSA (r, s, v) over the EIP-712 struct hash.
-struct SwapIntent {
-    address user;
-    bytes32 poolId;
-    bool    zeroForOne;
-    uint128 amountIn;
-    uint128 minAmountOut;
-    uint64  nonce;
-    uint64  deadline;
-    bytes   signature;
-}
 
 /// @title ISettler
 /// @author ohMySol

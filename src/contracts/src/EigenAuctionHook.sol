@@ -16,7 +16,8 @@ import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 import {FullMath} from "v4-core/libraries/FullMath.sol";
 import {FixedPoint128} from "v4-core/libraries/FixedPoint128.sol";
 
-import {IEigenAuctionHook, Position, LiquidityCallback} from "./interfaces/IEigenAuctionHook.sol";
+import {IEigenAuctionHook} from "./interfaces/IEigenAuctionHook.sol";
+import {Position, LiquidityCallback} from "./types/Position.sol";
 import {IAuctionServiceManager} from "./interfaces/IAuctionServiceManager.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {EventsLib} from "./libraries/EventsLib.sol";
