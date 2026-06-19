@@ -9,30 +9,30 @@ import {PoolId} from "v4-core/types/PoolId.sol";
 library EventsLib {
     /* AuctionServiceManager Events  */
 
-    /// @notice Emitted when `AuctionServiceManager` received an auction winner
+    /// @notice Emitted when an operator records the arb order it included for a (pool, block)
     /// @param poolId ID of the pool
-    /// @param targetBlock Block where the winner was commited
-    /// @param winner Address of the auction winner
-    /// @param bidAmount Amount of the winner bid
-    event WinnerCommitted(
+    /// @param blockNumber Block the settlement targeted
+    /// @param operator Operator that executed the settlement
+    /// @param quantityIn Input quantity of the included arb order
+    /// @param quantityOut Output quantity of the included arb order
+    event SettlementRecorded(
         PoolId indexed poolId,
-        uint256 indexed targetBlock,
-        address indexed winner,
-        uint256 bidAmount
+        uint256 indexed blockNumber,
+        address indexed operator,
+        uint128 quantityIn,
+        uint128 quantityOut
     );
 
-    /// @notice Emitted when a committed result is successfully challenged via a higher-bid fraud proof
-    /// @param poolId Pool the disputed result belongs to
-    /// @param targetBlock Block number of the disputed result
-    /// @param challenger Address that submitted the challenge
-    /// @param higherBidder Bidder whose signed bid proved the committed winner was wrong
-    /// @param higherBidAmount The ignored higher bid amount
-    event WinnerChallenged(
+    /// @notice Emitted when a settlement is successfully challenged with a strictly-better arb order
+    /// @param poolId Pool the disputed settlement belongs to
+    /// @param blockNumber Block number of the disputed settlement
+    /// @param challenger Address that submitted the fraud proof
+    /// @param operator Operator that was slashed
+    event SettlementChallenged(
         PoolId indexed poolId,
-        uint256 indexed targetBlock,
+        uint256 indexed blockNumber,
         address indexed challenger,
-        address higherBidder,
-        uint256 higherBidAmount
+        address operator
     );
 
     /// @notice Emitted for each operator slashed after a successful challenge
@@ -120,6 +120,24 @@ library EventsLib {
     /// @param user  Owner of the nonce
     /// @param nonce The invalidated nonce
     event NonceInvalidated(address indexed user, uint64 nonce);
+
+    /// @notice Emitted when a user deposits tokens into their internal Settler balance
+    /// @param asset Token deposited
+    /// @param user Account credited
+    /// @param amount Amount deposited
+    event Deposited(address indexed asset, address indexed user, uint256 amount);
+
+    /// @notice Emitted when a user withdraws tokens from their internal Settler balance
+    /// @param asset Token withdrawn
+    /// @param user Account debited
+    /// @param amount Amount withdrawn
+    event Withdrawn(address indexed asset, address indexed user, uint256 amount);
+
+    /// @notice Emitted when a top-of-block arb order is filled inside a settlement
+    /// @param poolId Pool the arb executed against
+    /// @param arber Arbitrageur whose signed order was included
+    /// @param bid Reward (currency0) the arb left for LPs, derived from the AMM quote
+    event ArbFilled(PoolId indexed poolId, address indexed arber, uint256 bid);
 
     /// @notice Emitted when a full settlement round (arb + user intents) completes
     /// @param poolId Pool that was settled
