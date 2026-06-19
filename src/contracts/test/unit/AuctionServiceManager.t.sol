@@ -89,7 +89,7 @@ contract AuctionServiceManagerTest is Test {
         returns (ToBOrder memory a)
     {
         a = ToBOrder({
-            arber: arber,
+            searcher: arber,
             poolId: PoolId.unwrap(poolId),
             zeroForOne: zeroForOne,
             useInternal: false,
@@ -100,7 +100,7 @@ contract AuctionServiceManagerTest is Test {
         });
         bytes32 structHash = keccak256(
             abi.encode(
-                TOB_ORDER_TYPEHASH, a.arber, a.poolId, a.zeroForOne, a.useInternal, a.quantityIn, a.quantityOut, a.validForBlock
+                TOB_ORDER_TYPEHASH, a.searcher, a.poolId, a.zeroForOne, a.useInternal, a.quantityIn, a.quantityOut, a.validForBlock
             )
         );
         bytes32 digest = keccak256(abi.encodePacked(hex"1901", settler.DOMAIN_SEPARATOR(), structHash));
@@ -218,7 +218,7 @@ contract AuctionServiceManagerTest is Test {
         uint256 target = block.number;
         _record(target, true, 1e18, 1e18);
         ToBOrder memory better = _signToB(true, 1e18, 0.9e18, uint64(target));
-        better.arber = makeAddr("notSigner"); // recovery will not match
+        better.searcher = makeAddr("notSigner"); // recovery will not match
         vm.expectRevert(ErrorsLib.AuctionServiceManager_InvalidOrderSignature.selector);
         asm.challengeSettlement(poolId, target, better);
     }

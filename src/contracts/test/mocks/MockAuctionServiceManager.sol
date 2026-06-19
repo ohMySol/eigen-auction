@@ -3,100 +3,84 @@ pragma solidity ^0.8.0;
 
 import {PoolId} from "v4-core/types/PoolId.sol";
 
-import {IAuctionServiceManager, AuctionResult} from "../../src/interfaces/IAuctionServiceManager.sol";
-import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
+import {IAuctionServiceManager} from "../../src/interfaces/IAuctionServiceManager.sol";
+import {AuctionResult} from "../../src/types/AuctionResult.sol";
+import {ToBOrder} from "../../src/types/ToBOrder.sol";
 import {EventsLib} from "../../src/libraries/EventsLib.sol";
 
 /// @title MockAuctionServiceManager
 /// @author ohMySol
-/// @notice Test double for `EigenAuctionHook` unit tests. A single trusted owner commits winners
-/// directly, bypassing the ECDSA quorum and EigenLayer entirely. The `signatures` argument to
-/// `commitWinner` is ignored, and the EigenLayer-only methods (`initialize`, `challengeWinner`) are
-/// stubs. Never deploy to production.
-/// @dev Implements the hook-facing `IAuctionServiceManager` surface, so it is drop-in compatible
-/// with the hook, which only ever reads `getWinner`. It deliberately does NOT pull in `IStrategy`
-/// (the operator-set admin functions live only on the real contract), keeping this mock — and any
-/// V4 test that imports it — free of EigenLayer's `^0.8.27` pragma.
+/// @notice Test double for the operator-batch model. Operator membership is set directly via
+/// `setOperator`, bypassing EigenLayer. The settler-only guard on `recordSettlement` is enforced so
+/// Settler tests exercise the real wiring. Never deploy to production.
+/// @dev Implements the hook/settler-facing `IAuctionServiceManager` surface only. It deliberately
+/// does NOT pull in `IStrategy`, keeping this mock — and any V4 test that imports it — free of
+/// EigenLayer's `^0.8.27` pragma.
 contract MockAuctionServiceManager is IAuctionServiceManager {
-    /* STORAGE */
+    /// @inheritdoc IAuctionServiceManager
+    address public settler;
 
-    /// @notice Address allowed to commit winners. Set to the deployer at construction.
-    address public owner;
+    /// @notice Operator allowlist used by `isOperator`.
+    mapping(address => bool) public operators;
 
-    /// @notice poolId => targetBlock => committed auction result.
+    /// @notice poolId => blockNumber => recorded settlement.
     mapping(PoolId => mapping(uint256 => AuctionResult)) private _results;
 
-    /* MODIFIERS */
+    /* TEST HELPERS */
 
-    /// @dev Restricts a function to the contract owner.
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert ErrorsLib.AuctionServiceManager_NotOwner();
-        _;
+    /// @notice Flags `operator` as (un)authorized for `isOperator`.
+    function setOperator(address operator, bool allowed) external {
+        operators[operator] = allowed;
     }
 
-    /* CONSTRUCTOR */
-
-    /// @dev Initializes the owner to the deployer.
-    constructor() {
-        owner = msg.sender;
+    /// @notice Flags an already-recorded settlement as challenged.
+    function markChallenged(PoolId poolId, uint256 blockNumber) external {
+        _results[poolId][blockNumber].challenged = true;
     }
 
-    /* INERT EIGENLAYER STUBS */
+    /* INERT STUBS */
 
     /// @inheritdoc IAuctionServiceManager
-    /// @dev No quorum in the mock — always returns 0.
-    function threshold() external pure override returns (uint256) {
-        return 0;
-    }
-
-    /// @inheritdoc IAuctionServiceManager
-    /// @dev No-op: the mock has no EigenLayer wiring to initialise.
     function initialize(address, address) external override {}
 
     /// @inheritdoc IAuctionServiceManager
-    /// @dev No-op: the mock has no challenge or slashing logic.
-    function challengeWinner(PoolId, uint256, address, uint256, bytes calldata) external override {}
-
-    /// @notice Test helper: flags an already-committed result as challenged.
-    function markChallenged(PoolId poolId, uint256 targetBlock) external {
-        _results[poolId][targetBlock].challenged = true;
+    function challengeSettlement(PoolId poolId, uint256 blockNumber, ToBOrder calldata) external override {
+        _results[poolId][blockNumber].challenged = true;
     }
 
-    /* WINNER COMMITMENT */
+    /* CORE SURFACE */
 
     /// @inheritdoc IAuctionServiceManager
-    /// @dev The `signatures` argument is ignored in mock implementation. Stores the result directly so hook
-    /// tests can set up a committed winner without producing operator signatures.
-    function commitWinner(
+    function setSettler(address _settler) external override {
+        settler = _settler;
+    }
+
+    /// @inheritdoc IAuctionServiceManager
+    function isOperator(address operator) external view override returns (bool) {
+        return operators[operator];
+    }
+
+    /// @inheritdoc IAuctionServiceManager
+    function recordSettlement(
         PoolId poolId,
-        uint256 targetBlock,
-        address winner,
-        uint256 bidAmount,
-        bytes[] calldata /* signatures */
-    ) external override onlyOwner {
-        if (winner == address(0)) revert ErrorsLib.AuctionServiceManager_ZeroWinner();
-
-        _results[poolId][targetBlock] = AuctionResult({
-            bidAmount: bidAmount,
-            winner: winner,
-            committed: true,
-            challenged: false,
-            committedBlock: block.number,
-            signers: new address[](0)
-        });
-
-        emit EventsLib.WinnerCommitted(poolId, targetBlock, winner, bidAmount);
+        uint256 blockNumber,
+        address operator,
+        bool zeroForOne,
+        uint128 quantityIn,
+        uint128 quantityOut
+    ) external override {
+        AuctionResult storage result = _results[poolId][blockNumber];
+        result.operator = operator;
+        result.settledBlock = uint64(block.number);
+        result.zeroForOne = zeroForOne;
+        result.settled = true;
+        result.quantityIn = quantityIn;
+        result.quantityOut = quantityOut;
+        emit EventsLib.SettlementRecorded(poolId, blockNumber, operator, quantityIn, quantityOut);
     }
 
-    /* VIEW FUNCTIONS */
-
     /// @inheritdoc IAuctionServiceManager
-    function getWinner(PoolId poolId, uint256 blockNumber)
-        external
-        view
-        override
-        returns (AuctionResult memory)
-    {
+    function getSettlement(PoolId poolId, uint256 blockNumber) external view override returns (AuctionResult memory) {
         return _results[poolId][blockNumber];
     }
 }
