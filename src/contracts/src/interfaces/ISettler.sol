@@ -2,61 +2,58 @@
 pragma solidity ^0.8.0;
 
 import {PoolKey} from "v4-core/types/PoolKey.sol";
-import {SwapParams} from "v4-core/types/PoolOperation.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 
-import {SwapIntent} from "../types/SwapIntent.sol";
 import {IAuctionServiceManager} from "./IAuctionServiceManager.sol";
+import {SwapIntent} from "../types/SwapIntent.sol";
+import {ToBOrder} from "../types/ToBOrder.sol";
 
 /// @title ISettler
 /// @author ohMySol
-/// @notice Chain-wide settlement entry point for all EigenAuction pools.
+/// @notice Batch-settlement entry point for all EigenAuction pools.
 ///
-/// One Settler is deployed per chain. Each `EigenAuctionHook` registers it via `setSettler`.
-/// The AVS-committed winning operator calls `settle(key, arb, intents)` once per pool per block.
+/// One Settler is deployed per chain. Each `EigenAuctionHook` registers it via `setSettler`, and the
+/// AVS registers it via `setSettler`. A randomly selected AVS operator aggregates the block's signed
+/// arb order and user intents off-chain and calls `settle` once per pool per block. Everything runs
+/// inside a single Uniswap V4 unlock, so the batch's contents cannot be reordered by proposers/builders.
 ///
-/// Step 1 — Top-of-block arb rebalance.
-/// A single swap that moves the pool to the external price. The hook skims the operator's
-/// committed bid from the output and distributes it to in-range LPs via the reward-growth accumulator.
+/// Step 1 — Top-of-block arb. The signed `ToBOrder` executes as one AMM swap; the LP reward (bid) is
+/// derived on-chain in currency0 from the AMM quote vs the order amounts.
 ///
-/// Step 2 — User intent fills.
-/// Each signed `SwapIntent` is signature-verified, pool-checked, and filled at the post-arb price.
-/// Users bypass the public mempool entirely; their intents are delivered to the operator's private RPC.
-///
-/// Both steps execute inside a single Uniswap V4 flash-accounting unlock, so all token flows
-/// are atomic and revert together on any failure.
-///
-/// Fallback
-/// --------
-/// If no settlement lands for `FALLBACK_PERIOD` consecutive blocks, the hook re-opens that pool
-/// to unrestricted public swaps, preventing the venue lock from becoming a liveness failure.
+/// Step 2 — User batch. Every `SwapIntent` clears at one uniform `clearingPriceX128`; opposite
+/// directions net against each other and only the leftover hits the AMM. Each fill must satisfy the
+/// signer's `minAmountOut`.
 interface ISettler {
+    /* INTERNAL BALANCES */
+
+    /// @notice Internal balance of `asset` credited to `user`, usable in intents/orders with
+    /// `useInternal = true`.
+    function balanceOf(address asset, address user) external view returns (uint256);
+
+    /// @notice Deposits `amount` of `asset` into the caller's internal balance.
+    function deposit(address asset, uint256 amount) external;
+
+    /// @notice Withdraws `amount` of `asset` from the caller's internal balance.
+    function withdraw(address asset, uint256 amount) external;
+
     /* SETTLEMENT */
 
-    /// @notice Settle a block for `key`: execute the arb rebalance (Step 1) then fill user intents (Step 2).
-    ///
-    /// @dev Caller must be the AVS-committed winner for `key.toId()` at `block.number`. The function:
-    ///   1. Verifies the AVS result (committed, not challenged, caller is winner).
-    ///   2. Calls `hook.recordSettlement()` on `key.hooks` to reset the fallback timer.
-    ///   3. Calls `poolManager.unlock`, inside which all swaps execute atomically.
-    ///
-    /// Inside the unlock, if `arb.amountSpecified != 0`:
-    ///   a. The caller's `rewardAmount` of currency0 is pulled via transferFrom and deposited into
-    ///      the pool manager (sync + transferFrom + settle) BEFORE the arb swap. The hook collects
-    ///      this in `afterSwap` and distributes it to in-range LPs. The caller must have pre-approved
-    ///      this contract for at least `rewardAmount` of the pool's currency0.
-    ///   b. The current pool liquidity is read and passed as `expectedLiquidity` in hookData, so the
-    ///      hook can detect and revert on any JIT add that lands between this read and the swap.
-    ///
-    /// Reverts if both `arb.amountSpecified == 0` and `intents` is empty.
-    /// Reverts if any intent's `poolId` does not match `key.toId()`.
+    /// @notice Settle a block for `key`: execute the arb order, then clear user intents at one price.
+    /// @dev Caller must be an AVS-registered operator. Reverts if both the arb order is empty
+    /// (`quantityIn == quantityOut == 0`) and `intents` is empty, if a pool was already settled this
+    /// block, or if the batch is insolvent at the supplied clearing price.
     ///
     /// @param key The pool to settle.
-    /// @param rewardAmount Amount of currency0 to pay to LPs as the arb reward. The caller must have
-    ///        approved this contract for at least this amount. Pass 0 to skip the reward payment.
-    /// @param arb Top-of-block rebalance swap. Set `amountSpecified = 0` to skip Step 1.
-    /// @param intents Ordered list of user intents to fill at the post-arb price.
-    function settle(PoolKey calldata key, uint256 rewardAmount, SwapParams calldata arb, SwapIntent[] calldata intents) external;
+    /// @param arb Signed top-of-block arb order. Pass an all-zero order to skip the arb.
+    /// @param intents User intents to clear at `clearingPriceX128`.
+    /// @param clearingPriceX128 Uniform clearing price (currency1 per currency0, Q128). Required when
+    /// `intents` is non-empty.
+    function settle(
+        PoolKey calldata key,
+        ToBOrder calldata arb,
+        SwapIntent[] calldata intents,
+        uint256 clearingPriceX128
+    ) external;
 
     /* NONCE MANAGEMENT */
 
@@ -72,9 +69,9 @@ interface ISettler {
     /// @notice The Uniswap V4 pool manager this settler submits swaps to.
     function poolManager() external view returns (IPoolManager);
 
-    /// @notice The AVS service manager that commits per-block auction winners.
+    /// @notice The AVS service manager that authorizes operators and records settlements.
     function avs() external view returns (IAuctionServiceManager);
 
-    /// @notice EIP-712 domain separator used when verifying intent signatures.
+    /// @notice EIP-712 domain separator used when verifying intent and arb-order signatures.
     function DOMAIN_SEPARATOR() external view returns (bytes32);
 }
