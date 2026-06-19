@@ -6,7 +6,7 @@ import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
-import {SwapParams, ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
+import {SwapParams} from "v4-core/types/PoolOperation.sol";
 import {PoolSwapTest} from "v4-core/test/PoolSwapTest.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
@@ -19,7 +19,8 @@ import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 import {ConstantsLib} from "../../src/libraries/ConstantsLib.sol";
 import {ArbHelper} from "../helpers/ArbHelper.sol";
 
-/// @notice Unit tests for the `EigenAuctionHook`.
+/// @notice Unit tests for `EigenAuctionHook` access control, JIT guard, and reward distribution.
+/// LP reward splitting and removal are covered in EigenAuctionHookLP.t.sol.
 contract EigenAuctionHookTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
@@ -30,10 +31,11 @@ contract EigenAuctionHookTest is Test, Deployers {
     PoolKey public poolKey;
     PoolId public poolId;
 
-    // Fixed reward paid by arb helper per arb in currency0.
     uint256 constant REWARD = 0.001 ether;
+    int24 constant TICK_LOWER = -600;
+    int24 constant TICK_UPPER = 600;
 
-    address public lpRouter;
+    address lp = makeAddr("lp");
 
     function setUp() public {
         deployFreshManagerAndRouters();
@@ -41,41 +43,38 @@ contract EigenAuctionHookTest is Test, Deployers {
 
         mockAvs = new MockAuctionServiceManager();
 
-        uint160 flags = uint160(
-            Hooks.BEFORE_SWAP_FLAG |
-            Hooks.AFTER_SWAP_FLAG |
-            Hooks.AFTER_ADD_LIQUIDITY_FLAG |
-            Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
-        );
+        uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
         address hookAddress = address(flags);
         deployCodeTo("EigenAuctionHook.sol", abi.encode(address(manager), address(mockAvs), address(this)), hookAddress);
         hook = EigenAuctionHook(payable(hookAddress));
 
         (poolKey, poolId) = initPool(currency0, currency1, hook, 3000, 60, SQRT_PRICE_1_1);
 
-        lpRouter = address(modifyLiquidityRouter);
-
         arbHelper = new ArbHelper(manager);
-        // Allow arbHelper to pull currency0 (reward + arb input) from address(this).
+        hook.setSettler(address(arbHelper));
+
+        // Reward + arb input come from the test contract.
         MockERC20(Currency.unwrap(currency0)).approve(address(arbHelper), type(uint256).max);
         MockERC20(Currency.unwrap(currency1)).approve(address(arbHelper), type(uint256).max);
-    }
 
-    /* HELPERS */
+        // Seed an in-range LP through the hook so it is reward-tracked.
+        MockERC20(Currency.unwrap(currency0)).mint(lp, 1_000e18);
+        MockERC20(Currency.unwrap(currency1)).mint(lp, 1_000e18);
+        vm.startPrank(lp);
+        MockERC20(Currency.unwrap(currency0)).approve(address(hook), type(uint256).max);
+        MockERC20(Currency.unwrap(currency1)).approve(address(hook), type(uint256).max);
+        vm.stopPrank();
+    }
 
     function _bal(Currency c, address a) internal view returns (uint256) {
         return MockERC20(Currency.unwrap(c)).balanceOf(a);
     }
 
-    function _addLiquidity(int256 delta, bytes32 salt) internal {
-        modifyLiquidityRouter.modifyLiquidity(
-            poolKey,
-            ModifyLiquidityParams({tickLower: -600, tickUpper: 600, liquidityDelta: delta, salt: salt}),
-            new bytes(0)
-        );
+    function _addLp(uint128 liq) internal {
+        vm.prank(lp);
+        hook.addLiquidity(poolKey, TICK_LOWER, TICK_UPPER, liq);
     }
 
-    // Arb swap that pays REWARD of currency0 to LPs and moves price zeroForOne.
     function _arbSwap() internal {
         arbHelper.execute(
             poolKey,
@@ -85,87 +84,38 @@ contract EigenAuctionHookTest is Test, Deployers {
         );
     }
 
-    // Hook's currency0 balance — the cumulative reward collected from operators.
-    function _skimmed() internal view returns (uint256) {
-        return _bal(currency0, address(hook));
-    }
-
-    /* TESTS */
+    /* REWARD */
 
     function test_SoleLP_Earns_Whole_Reward_In_Currency0() public {
-        _addLiquidity(1e18, bytes32(0));
+        _addLp(1e18);
         vm.roll(block.number + 1);
         _arbSwap();
 
-        uint256 reward = _skimmed();
-        assertEq(reward, REWARD);
-
-        uint256 amount = hook.earned(poolKey, lpRouter, -600, 600, bytes32(0));
-        assertApproxEqAbs(amount, reward, 2);
+        assertEq(_bal(currency0, address(hook)), REWARD);
+        assertApproxEqAbs(hook.earned(poolKey, lp, TICK_LOWER, TICK_UPPER, bytes32(0)), REWARD, 2);
     }
 
-    function test_Reward_Splits_Proportionally_Between_Two_LPs() public {
-        _addLiquidity(1e18, bytes32(0));
-        _addLiquidity(3e18, bytes32(uint256(1)));
-
+    function test_ClaimRewards_Pays_Without_Removing() public {
+        _addLp(1e18);
         vm.roll(block.number + 1);
         _arbSwap();
 
-        uint256 reward = _skimmed();
-        uint256 a  = hook.earned(poolKey, lpRouter, -600, 600, bytes32(0));
-        uint256 aB = hook.earned(poolKey, lpRouter, -600, 600, bytes32(uint256(1)));
-
-        assertApproxEqAbs(a,  reward / 4,      2);
-        assertApproxEqAbs(aB, (reward * 3) / 4, 2);
+        uint256 before = _bal(currency0, lp);
+        vm.prank(lp);
+        hook.claimRewards(poolKey, TICK_LOWER, TICK_UPPER);
+        assertApproxEqAbs(_bal(currency0, lp) - before, REWARD, 2);
+        assertEq(hook.earned(poolKey, lp, TICK_LOWER, TICK_UPPER, bytes32(0)), 0);
     }
 
-    function test_OutOfRange_LP_Earns_Nothing() public {
-        _addLiquidity(1e18, bytes32(0));
+    /* JIT GUARD */
 
-        modifyLiquidityRouter.modifyLiquidity(
-            poolKey,
-            ModifyLiquidityParams({tickLower: 1200, tickUpper: 1800, liquidityDelta: 5e18, salt: bytes32(uint256(2))}),
-            new bytes(0)
-        );
-
-        vm.roll(block.number + 1);
-        _arbSwap();
-
-        uint256 out = hook.earned(poolKey, lpRouter, 1200, 1800, bytes32(uint256(2)));
-        assertEq(out, 0);
-
-        uint256 inRange = hook.earned(poolKey, lpRouter, -600, 600, bytes32(0));
-        assertApproxEqAbs(inRange, _skimmed(), 2);
-    }
-
-    function test_RemoveLiquidity_Pays_Rewards_To_LP() public {
-        _addLiquidity(1e18, bytes32(0));
-        vm.roll(block.number + 1);
-        _arbSwap();
-        uint256 reward = _skimmed();
-
-        uint256 before = _bal(currency0, lpRouter);
-        // Removing triggers automatic reward payment — no separate claim step needed.
-        _addLiquidity(-1e18, bytes32(0));
-        assertApproxEqAbs(_bal(currency0, lpRouter) - before, reward, 2);
-
-        // Nothing left after remove.
-        assertEq(hook.earned(poolKey, lpRouter, -600, 600, bytes32(0)), 0);
-    }
-
-    /// @notice JIT detection: arb with a stale expectedLiquidity (before a JIT add) reverts.
     function test_JIT_Detection_Reverts_When_Liquidity_Changed() public {
-        _addLiquidity(1e18, bytes32(0));
+        _addLp(1e18);
         vm.roll(block.number + 1);
 
-        // Snapshot pre-JIT liquidity.
         uint256 preLiq = manager.getLiquidity(poolId);
+        _addLp(5e18); // JIT add changes liquidity after the operator's snapshot
 
-        // JIT add changes pool liquidity after the snapshot.
-        _addLiquidity(5e18, bytes32(uint256(7)));
-
-        // Arb with the stale expectedLiquidity should revert. V4 wraps the hook's inner revert
-        // in a FailedHookCall, so we check for a generic revert rather than the specific selector.
         vm.expectRevert();
         arbHelper.executeWithLiqOverride(
             poolKey,
@@ -176,27 +126,25 @@ contract EigenAuctionHookTest is Test, Deployers {
         );
     }
 
-    /// @notice An arb with rewardAmount=0 and old-format hookData still works (no reward, no JIT check).
-    function test_ZeroReward_Arb_Passes_Without_Reward() public {
-        _addLiquidity(1e18, bytes32(0));
+    function test_ZeroReward_Arb_CrossesWithoutReward() public {
+        _addLp(1e18);
         vm.roll(block.number + 1);
 
-        // Old-format hookData: abi.encode(true) = 32 bytes, rewardAmount and expectedLiquidity default to 0.
-        swapRouter.swap(
+        arbHelper.execute(
             poolKey,
             SwapParams({zeroForOne: true, amountSpecified: -0.01 ether, sqrtPriceLimitX96: MIN_PRICE_LIMIT}),
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
-            abi.encode(true)
+            0,
+            address(this)
         );
 
-        // No reward distributed.
-        assertEq(_skimmed(), 0);
-        assertEq(hook.earned(poolKey, lpRouter, -600, 600, bytes32(0)), 0);
+        assertEq(_bal(currency0, address(hook)), 0);
+        assertEq(hook.earned(poolKey, lp, TICK_LOWER, TICK_UPPER, bytes32(0)), 0);
     }
 
-    function test_NonSettlerSwap_Reverts_When_Settler_Set() public {
-        hook.setSettler(address(0xBEEF));
+    /* ACCESS CONTROL */
 
+    function test_NonSettlerSwap_Reverts_When_Settler_Set() public {
+        _addLp(1e18);
         vm.expectRevert();
         swapRouter.swap(
             poolKey,
@@ -207,26 +155,13 @@ contract EigenAuctionHookTest is Test, Deployers {
     }
 
     function test_Swap_Passes_After_Fallback_Period_Elapses() public {
-        hook.setSettler(address(0xBEEF));
+        _addLp(1e18);
         vm.roll(block.number + ConstantsLib.FALLBACK_PERIOD + 1);
-
-        _addLiquidity(1e18, bytes32(0));
         swapRouter.swap(
             poolKey,
             SwapParams({zeroForOne: true, amountSpecified: -0.01 ether, sqrtPriceLimitX96: MIN_PRICE_LIMIT}),
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             new bytes(0)
         );
-    }
-
-    function test_NormalSwap_Passes_Through() public {
-        _addLiquidity(1e18, bytes32(0));
-        swapRouter.swap(
-            poolKey,
-            SwapParams({zeroForOne: true, amountSpecified: -0.01 ether, sqrtPriceLimitX96: MIN_PRICE_LIMIT}),
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
-            new bytes(0)
-        );
-        assertEq(_skimmed(), 0);
     }
 }

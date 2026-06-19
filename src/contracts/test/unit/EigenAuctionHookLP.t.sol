@@ -37,10 +37,7 @@ contract EigenAuctionHookLPTest is Test, Deployers {
 
         mockAvs = new MockAuctionServiceManager();
 
-        uint160 flags = uint160(
-            Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG |
-            Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
-        );
+        uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
         address hookAddress = address(flags);
         deployCodeTo("EigenAuctionHook.sol", abi.encode(address(manager), address(mockAvs), address(this)), hookAddress);
         hook = EigenAuctionHook(payable(hookAddress));
@@ -55,6 +52,8 @@ contract EigenAuctionHookLPTest is Test, Deployers {
         vm.stopPrank();
 
         arbHelper = new ArbHelper(manager);
+        // The arb helper acts as the hook's settler so its swaps and distributeReward succeed.
+        hook.setSettler(address(arbHelper));
         // address(this) (the test) pays rewards and arb inputs.
         MockERC20(Currency.unwrap(currency0)).approve(address(arbHelper), type(uint256).max);
         MockERC20(Currency.unwrap(currency1)).approve(address(arbHelper), type(uint256).max);
@@ -156,12 +155,10 @@ contract EigenAuctionHookLPTest is Test, Deployers {
         hook.unlockCallback("");
     }
 
-    /// @notice `setSettler` can only be called once.
+    /// @notice `setSettler` can only be called once (already set to the arb helper in setUp).
     function test_SetSettler_Reverts_When_Already_Set() public {
-        address settler = makeAddr("settler");
-        hook.setSettler(settler);
         vm.expectRevert(ErrorsLib.EigenAuctionHook_SettlerAlreadySet.selector);
-        hook.setSettler(settler);
+        hook.setSettler(makeAddr("settler2"));
     }
 
     /// @notice LP earns only from arbs that occur while price is inside its range.
