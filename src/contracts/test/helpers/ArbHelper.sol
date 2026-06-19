@@ -14,10 +14,15 @@ interface IERC20Min {
     function transferFrom(address, address, uint256) external returns (bool);
 }
 
-/// @dev Test helper that executes an arb swap following the same pre-funding pattern as Settler:
-/// deposits `rewardAmount` of currency0 into the pool manager before the swap, passes the current
-/// pool liquidity as `expectedLiquidity` in hookData (or an override for JIT tests), and settles
-/// all swap deltas against `caller`.
+interface IHookDistribute {
+    function distributeReward(PoolKey calldata key, uint256 amount) external;
+}
+
+/// @dev Test helper that mimics the Settler's arb path under the operator-batch model: it acts as the
+/// hook's settler, runs the arb swap (the hook crosses ticks in afterSwap), passes the current pool
+/// liquidity as `expectedLiquidity` in hookData (or an override for JIT tests) for the JIT guard, then
+/// transfers `rewardAmount` of currency0 to the hook and folds it into LP rewards via
+/// `distributeReward`. Set the hook's settler to this contract in test setUp.
 contract ArbHelper is IUnlockCallback {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
@@ -55,15 +60,10 @@ contract ArbHelper is IUnlockCallback {
         (address caller, PoolKey memory key, SwapParams memory params, uint256 rewardAmount, uint256 liqOverride) =
             abi.decode(data, (address, PoolKey, SwapParams, uint256, uint256));
 
-        // Transfer reward directly to the hook (outside V4 flash accounting) so the hook can
-        // update its accumulator in afterSwap without leaving unsettled PM deltas.
-        if (rewardAmount > 0) {
-            IERC20Min(Currency.unwrap(key.currency0)).transferFrom(caller, address(key.hooks), rewardAmount);
-        }
-
         uint256 expectedLiq = liqOverride > 0 ? liqOverride : pm.getLiquidity(key.toId());
 
-        BalanceDelta delta = pm.swap(key, params, abi.encode(true, rewardAmount, expectedLiq));
+        // The hook crosses ticks in afterSwap; hookData carries expectedLiquidity for the JIT guard.
+        BalanceDelta delta = pm.swap(key, params, abi.encode(expectedLiq));
 
         // Settle arb swap deltas against caller.
         int128 d0 = delta.amount0();
@@ -81,6 +81,13 @@ contract ArbHelper is IUnlockCallback {
             pm.settle();
         } else if (d1 > 0) {
             pm.take(key.currency1, caller, uint256(int256(d1)));
+        }
+
+        // Transfer the reward to the hook and fold it into LP rewards at the post-arb tick. This
+        // contract must be registered as the hook's settler for distributeReward to succeed.
+        if (rewardAmount > 0) {
+            IERC20Min(Currency.unwrap(key.currency0)).transferFrom(caller, address(key.hooks), rewardAmount);
+            IHookDistribute(address(key.hooks)).distributeReward(key, rewardAmount);
         }
 
         return "";

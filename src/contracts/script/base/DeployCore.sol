@@ -62,6 +62,7 @@ abstract contract DeployCore is Script {
         protocol.hook = _deployHook(config.poolManager, address(protocol.avs), owner);
         protocol.settler = new Settler(config.poolManager, address(protocol.avs));
         protocol.hook.setSettler(address(protocol.settler));
+        protocol.avs.setSettler(address(protocol.settler));
         // AllocationManager requires AVS metadata to exist before an operator set can be created.
         protocol.avs.registerAvsMetadata("https://eigen-auction.local/avs.json");
         _createOperatorSet(protocol.avs, config.stakeStrategy);
@@ -148,8 +149,7 @@ abstract contract DeployCore is Script {
             ISlashingRegistryCoordinator(address(0)),
             IStakeRegistry(address(0)),
             IPermissionController(config.permissionController),
-            IAllocationManager(config.allocationManager),
-            config.threshold
+            IAllocationManager(config.allocationManager)
         );
         bytes memory initData = abi.encodeCall(AuctionServiceManager.initialize, (owner, owner));
         avs = AuctionServiceManager(address(new ERC1967Proxy(address(impl), initData)));
