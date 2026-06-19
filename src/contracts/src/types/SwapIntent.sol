@@ -15,7 +15,10 @@ bytes32 constant INTENT_TYPEHASH = keccak256(
 /// @param user Signer and token source / recipient.
 /// @param poolId `PoolId.unwrap(key.toId())` — binds the intent to a specific pool,
 /// preventing cross-pool replay when the same settler serves multiple pools.
-/// @param zeroForOne Swap direction: currency0 → currency1 when `true`.
+/// @param zeroForOne Swap direction: currency0 --> currency1 when `true`.
+/// @param useInternal When `true`, settle from the user's internal Settler balance instead of
+/// pulling/pushing tokens via ERC20 transfers. Lets active traders pre-fund once and fill many
+/// intents without per-intent approvals.
 /// @param amountIn Exact input amount the settler is authorised to pull from `user`.
 /// @param minAmountOut Minimum output the user accepts; the fill reverts if not met.
 /// @param nonce Single-use value for replay protection (bitmap scheme, not sequential).
@@ -26,6 +29,7 @@ struct SwapIntent {
     address user;
     bytes32 poolId;
     bool zeroForOne;
+    bool useInternal;
     uint128 amountIn;
     uint128 minAmountOut;
     uint64 nonce;
