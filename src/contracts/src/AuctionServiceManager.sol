@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {ECDSA} from "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
-import {MessageHashUtils} from "openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {IAVSDirectory} from "eigenlayer-contracts/src/contracts/interfaces/IAVSDirectory.sol";
 import {IRewardsCoordinator} from "eigenlayer-contracts/src/contracts/interfaces/IRewardsCoordinator.sol";
@@ -19,43 +18,48 @@ import {PoolId} from "v4-core/types/PoolId.sol";
 
 import {IAuctionServiceManager} from "./interfaces/IAuctionServiceManager.sol";
 import {AuctionResult} from "./types/AuctionResult.sol";
+import {ToBOrder, TOB_ORDER_TYPEHASH} from "./types/ToBOrder.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {EventsLib} from "./libraries/EventsLib.sol";
 import {ConstantsLib} from "./libraries/ConstantsLib.sol";
 
+/// @dev Minimal Settler surface needed to recover the EIP-712 domain for fraud-proof verification.
+interface ISettlerDomain {
+    function DOMAIN_SEPARATOR() external view returns (bytes32);
+}
+
 /// @title AuctionServiceManager
 /// @author ohMySol
-/// @notice EigenLayer AVS service manager for the arbitrage-auction hook. Inherits `ServiceManagerBase`
-/// so all EigenLayer integration — rewards, metadata, admin/appointee management - is handled by the
-/// base. On top, it validates per-block auction winner commitments via an ECDSA `m-of-n` threshold.
+/// @notice EigenLayer AVS service manager for the operator-batch arbitrage auction. Inherits
+/// `ServiceManagerBase` so EigenLayer integration (rewards, metadata, admin) is handled by the base.
 ///
-/// Operator membership is resolved entirely via EigenLayer's `AllocationManager`:
-/// an operator is considered authorised if it is a member of `OPERATOR_SET_ID` for this AVS.
-/// Operators join by calling `AllocationManager.registerForOperatorSets`.
+/// Operator membership is resolved entirely via EigenLayer's `AllocationManager`: an address is an
+/// authorized operator if it is a member of `OPERATOR_SET_ID` for this AVS. The selected operator 
+/// picks the winning arb off-chain and submits the batch through the Settler, which records the included 
+/// arb order here via `recordSettlement`.
 ///
-/// Committed results sit in a `CHALLENGE_WINDOW`- block window. Anyone can submit a fraud proof —
-/// a signed bid from a higher bidder that operators ignored. A successful challenge marks the result
-/// as invalid and triggers EigenLayer slashing of every operator who signed the fraudulent commitment.
+/// Fraud proof
+/// -----------
+/// Each settlement sits in a `CHALLENGE_WINDOW` - block window. Anyone can submit a signed `ToBOrder`
+/// for the same (pool, block, direction) that strictly dominates the included order — pays at least
+/// as much and wants at most as much, strict in one. Dominance guarantees a strictly larger token0
+/// bid regardless of AMM state, so the proof needs no historical pool data. A valid challenge slashes
+/// the operator that settled.
 ///
-/// @dev Deploy as a proxy (`ERC1967Proxy` or `TransparentUpgradeableProxy`). Call `initialize` once.
+/// @dev Deploy as a proxy. Call `initialize` once, then `setSettler` once.
 contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IAVSRegistrar {
-    using ECDSA for bytes32;
-    using MessageHashUtils for bytes32;
-
-    /* IMMUTABLE VARIABLES */
+    /* STORAGE */
 
     /// @inheritdoc IAuctionServiceManager
-    uint256 public immutable threshold;
-
-    /* STORAGE */
+    address public settler;
 
     /// @notice Strategies slashed per operator on a successful challenge.
     IStrategy[] private _slashableStrategies;
 
-    /// @notice Slash proportion per strategy in wads (1e18 = 100 %).
+    /// @notice Slash proportion per strategy in wads (1e18 = 100%).
     uint256[] private _slashWads;
 
-    /// @notice poolId ==> targetBlock ==> committed auction result.
+    /// @notice poolId => blockNumber => recorded settlement.
     mapping(PoolId => mapping(uint256 => AuctionResult)) private _results;
 
     /// @dev Restricts the IAVSRegistrar functions to be called only by EigenLayer's AllocationManager.
@@ -74,15 +78,13 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
     /// @param _stakeRegistry        `StakeRegistry` for this AVS (may be `address(0)`).
     /// @param _permissionController EigenLayer `PermissionController` proxy.
     /// @param _allocationManager    EigenLayer `AllocationManager` proxy.
-    /// @param _threshold            Minimum unique operator signatures required to commit a winner.
     constructor(
         IAVSDirectory _avsDirectory,
         IRewardsCoordinator _rewardsCoordinator,
         ISlashingRegistryCoordinator _registryCoordinator,
         IStakeRegistry _stakeRegistry,
         IPermissionController _permissionController,
-        IAllocationManager _allocationManager,
-        uint256 _threshold
+        IAllocationManager _allocationManager
     )
         ServiceManagerBase(
             _avsDirectory,
@@ -92,10 +94,7 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
             _permissionController,
             _allocationManager
         )
-    {
-        if (_threshold == 0) revert ErrorsLib.AuctionServiceManager_InvalidThreshold();
-        threshold = _threshold;
-    }
+    {}
 
     /* INITIALIZER */
 
@@ -104,38 +103,42 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
         __ServiceManagerBase_init(initialOwner, rewardsInitiator);
     }
 
+    /// @inheritdoc IAuctionServiceManager
+    function setSettler(address _settler) external onlyOwner {
+        if (_settler == address(0) || settler != address(0)) {
+            revert ErrorsLib.AuctionServiceManager_InvalidSettler();
+        }
+        settler = _settler;
+    }
+
     /* EIGENLAYER OPERATOR SET SETUP */
 
     /// @notice Registers this AVS's metadata with EigenLayer's AllocationManager.
     /// @dev Owner-only. MUST be called once before `createOperatorSet` — AllocationManager reverts
-    /// with `NonexistentAVSMetadata` otherwise. This is distinct from the inherited
-    /// `updateAVSMetadataURI`, which only writes to the legacy AVSDirectory, not the AllocationManager.
+    /// with `NonexistentAVSMetadata` otherwise.
     /// @param metadataURI URI describing the AVS (any non-empty string for local/testnet).
     function registerAvsMetadata(string calldata metadataURI) external onlyOwner {
         _allocationManager.updateAVSMetadataURI(address(this), metadataURI);
     }
 
     /// @notice Creates this AVS's operator set in EigenLayer with the given slashable strategies.
-    /// @dev Owner-only. Call once post-deployment; operators then join via `AllocationManager.registerForOperatorSets`. 
-    /// This function is not a part of the IAuctionServiceManager interface because it
-    /// references `IStrategy`, which has inside SlashingLib with a `^0.8.27` pragma that would conflict with the 
-    /// V4's `=0.8.26` pragma if imported by consumer contracts like `EigenAuctionHook`.
+    /// @dev Owner-only. Not part of the IAuctionServiceManager interface because it references
+    /// `IStrategy`, whose `^0.8.27` pragma would conflict with the V4 `=0.8.26` consumers contracts like `EigenAuctionHook`.
     /// @param strategies Strategies (staked assets) slashable on a successful challenge.
     function createOperatorSet(IStrategy[] calldata strategies) external onlyOwner {
         IAllocationManagerTypes.CreateSetParams[] memory params = new IAllocationManagerTypes.CreateSetParams[](1);
-        
+
         params[0] = IAllocationManagerTypes.CreateSetParams({
-            operatorSetId: ConstantsLib.OPERATOR_SET_ID, 
+            operatorSetId: ConstantsLib.OPERATOR_SET_ID,
             strategies: strategies
         });
 
         _allocationManager.createOperatorSets(address(this), params);
     }
 
-    /// @notice Sets the strategies and slash proportions applied to each signer on a successful
-    /// challenge. Owner-only. `strategies` must match the operator set; proportions are in wads
-    /// (1e17 = 10%, 1e18 = 100%). Kept off from the IAuctionServiceManager interface for the same `IStrategy`
-    /// pragma reason as `createOperatorSet`.
+    /// @notice Sets the strategies and slash proportions applied to a fraudulent operator.
+    /// Owner-only. Proportions are in wads (1e17 = 10%, 1e18 = 100%). Kept off the interface for the
+    /// same `IStrategy` pragma reason as `createOperatorSet`.
     /// @param strategies Strategies to slash.
     /// @param wads Slash proportion per strategy, in wads. Same length as `strategies`.
     function configureSlashing(IStrategy[] calldata strategies, uint256[] calldata wads) external onlyOwner {
@@ -159,8 +162,8 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
 
     /// @inheritdoc IAVSRegistrar
     /// @dev Called by AllocationManager when an operator joins. Admission is permissionless — the
-    /// economic gate is the operator's EigenLayer stake/slashing enforced by AllocationManager; we
-    /// only assert the registration targets this AVS and the single operator set this AVS runs.
+    /// economic gate is the operator's EigenLayer stake/slashing; we only assert the registration
+    /// targets this AVS and the single operator set it runs.
     function registerOperator(
         address operator,
         address avs,
@@ -195,73 +198,79 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
     /* AVS LOGIC */
 
     /// @inheritdoc IAuctionServiceManager
-    function commitWinner(
-        PoolId poolId,
-        uint256 targetBlock,
-        address winner,
-        uint256 bidAmount,
-        bytes[] calldata signatures
-    ) external override {
-        if (winner == address(0)) revert ErrorsLib.AuctionServiceManager_ZeroWinner();
-        if (block.number > targetBlock + 1) revert ErrorsLib.AuctionServiceManager_StaleBlock();
-        if (_results[poolId][targetBlock].committed) revert ErrorsLib.AuctionServiceManager_AlreadyCommitted();
-
-        bytes32 ethHash =
-            keccak256(abi.encodePacked(poolId, targetBlock, winner, bidAmount)).toEthSignedMessageHash();
-
-        (uint256 validSigs, address[] memory signers) = _countUniqueOperatorSigs(ethHash, signatures);
-        if (validSigs < threshold) revert ErrorsLib.AuctionServiceManager_QuorumNotMet();
-
-        _results[poolId][targetBlock] = AuctionResult({
-            bidAmount: bidAmount,
-            winner: winner,
-            committed: true,
-            challenged: false,
-            committedBlock: block.number,
-            signers: signers
+    function isOperator(address operator) public view returns (bool) {
+        OperatorSet memory opSet = OperatorSet({
+            avs: address(this), 
+            id: ConstantsLib.OPERATOR_SET_ID
         });
-
-        emit EventsLib.WinnerCommitted(poolId, targetBlock, winner, bidAmount);
+        return _allocationManager.isMemberOfOperatorSet(operator, opSet);
     }
 
     /// @inheritdoc IAuctionServiceManager
-    function challengeWinner(
+    function recordSettlement(
         PoolId poolId,
-        uint256 targetBlock,
-        address higherBidder,
-        uint256 higherBidAmount,
-        bytes calldata bidderSignature
+        uint256 blockNumber,
+        address operator,
+        bool zeroForOne,
+        uint128 quantityIn,
+        uint128 quantityOut
     ) external {
-        AuctionResult storage result = _results[poolId][targetBlock];
+        if (msg.sender != settler) revert ErrorsLib.AuctionServiceManager_NotSettler();
 
-        if (!result.committed) revert ErrorsLib.AuctionServiceManager_NotCommitted();
+        AuctionResult storage result = _results[poolId][blockNumber];
+        if (result.settled) revert ErrorsLib.AuctionServiceManager_AlreadySettled();
+
+        result.operator = operator;
+        result.settledBlock = uint64(block.number);
+        result.zeroForOne = zeroForOne;
+        result.settled = true;
+        result.quantityIn = quantityIn;
+        result.quantityOut = quantityOut;
+
+        emit EventsLib.SettlementRecorded(poolId, blockNumber, operator, quantityIn, quantityOut);
+    }
+
+    /// @inheritdoc IAuctionServiceManager
+    function challengeSettlement(PoolId poolId, uint256 blockNumber, ToBOrder calldata betterOrder) external {
+        AuctionResult storage result = _results[poolId][blockNumber];
+
+        if (!result.settled) revert ErrorsLib.AuctionServiceManager_NotSettled();
         if (result.challenged) revert ErrorsLib.AuctionServiceManager_AlreadyChallenged();
-        if (block.number > result.committedBlock + ConstantsLib.CHALLENGE_WINDOW) {
+        if (block.number > result.settledBlock + ConstantsLib.CHALLENGE_WINDOW) {
             revert ErrorsLib.AuctionServiceManager_ChallengeWindowClosed();
         }
-        if (higherBidAmount <= result.bidAmount) revert ErrorsLib.AuctionServiceManager_NotHigherBid();
 
-        bytes32 bidHash =
-            keccak256(abi.encodePacked(poolId, targetBlock, higherBidAmount)).toEthSignedMessageHash();
-        (address recovered, ECDSA.RecoverError err,) = ECDSA.tryRecover(bidHash, bidderSignature);
-        if (err != ECDSA.RecoverError.NoError || recovered != higherBidder) {
-            revert ErrorsLib.AuctionServiceManager_InvalidBidSignature();
+        // The challenge order must be bound to the same pool, block, and direction as the settlement.
+        if (
+            betterOrder.poolId != PoolId.unwrap(poolId) || 
+            betterOrder.validForBlock != blockNumber || 
+            betterOrder.zeroForOne != result.zeroForOne
+        ) revert ErrorsLib.AuctionServiceManager_OrderMismatch();
+
+        // Dominance: pays >= and wants <= (strict in at least one) --> strictly larger token0 bid for
+        // ANY AMM state, so no historical pool data is required to prove the operator chose worse.
+        bool dominates = betterOrder.quantityIn >= result.quantityIn &&  betterOrder.quantityOut <= result.quantityOut && 
+        (betterOrder.quantityIn > result.quantityIn || betterOrder.quantityOut < result.quantityOut);
+        
+        if (!dominates) revert ErrorsLib.AuctionServiceManager_NotBetterOrder();
+
+        // The order must be a genuine, searcher-signed commitment under the Settler's EIP-712 domain.
+        bytes32 digest = _toBDigest(betterOrder);
+        (address recovered, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, betterOrder.signature);
+        if (err != ECDSA.RecoverError.NoError || recovered != betterOrder.searcher) {
+            revert ErrorsLib.AuctionServiceManager_InvalidOrderSignature();
         }
 
         result.challenged = true;
+        _slashOperator(result.operator);
 
-        address[] memory signers = result.signers;
-        for (uint256 i = 0; i < signers.length; i++) {
-            _slashSigner(signers[i]);
-        }
-
-        emit EventsLib.WinnerChallenged(poolId, targetBlock, msg.sender, higherBidder, higherBidAmount);
+        emit EventsLib.SettlementChallenged(poolId, blockNumber, msg.sender, result.operator);
     }
 
     /* VIEW FUNCTIONS */
 
     /// @inheritdoc IAuctionServiceManager
-    function getWinner(PoolId poolId, uint256 blockNumber) external view returns (AuctionResult memory) {
+    function getSettlement(PoolId poolId, uint256 blockNumber) external view returns (AuctionResult memory) {
         return _results[poolId][blockNumber];
     }
 
@@ -283,68 +292,46 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
 
     /// @dev Return `new address[](0)` because we handle strategy configuration through `AllocationManager` 
     /// directly (via `createOperatorSet` and `configureSlashing`), not through the legacy StakeRegistry path.
-    function getOperatorRestakedStrategies(address)
-        external
-        pure
-        override
-        returns (address[] memory)
-    {
+    function getOperatorRestakedStrategies(address) external pure override returns (address[] memory) {
         return new address[](0);
     }
 
     /* INTERNAL HELPERS */
 
-    /// @dev Calls `AllocationManager.slashOperator` for `signer`. Silently no-ops when no
-    /// slashing strategies are configured yet.
-    function _slashSigner(address signer) internal {
+    /// @dev Recomputes the EIP-712 digest a `ToBOrder` was signed over, using the Settler's domain so
+    /// the same signature the Settler accepted is verifiable here.
+    function _toBDigest(ToBOrder calldata order) internal view returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                TOB_ORDER_TYPEHASH, 
+                order.searcher, 
+                order.poolId, 
+                order.zeroForOne, 
+                order.useInternal, 
+                order.quantityIn, 
+                order.quantityOut,
+                order.validForBlock
+            )
+        );
+
+        bytes32 domainSeparator = ISettlerDomain(settler).DOMAIN_SEPARATOR();
+        return keccak256(abi.encodePacked(hex"1901", domainSeparator, structHash));
+    }
+
+    /// @dev Calls `AllocationManager.slashOperator` for `operator`. No-ops when no slashing
+    /// strategies are configured yet (the settlement is still marked challenged).
+    function _slashOperator(address operator) internal {
         if (_slashableStrategies.length == 0) return;
 
         IAllocationManagerTypes.SlashingParams memory params = IAllocationManagerTypes.SlashingParams({
-            operator: signer,
+            operator: operator,
             operatorSetId: ConstantsLib.OPERATOR_SET_ID,
             strategies: _slashableStrategies,
             wadsToSlash: _slashWads,
-            description: "AuctionServiceManager: fraudulent winner commitment"
+            description: "AuctionServiceManager: included a strictly worse arb order"
         });
 
         (uint256 slashId,) = _allocationManager.slashOperator(address(this), params);
-        emit EventsLib.OperatorSlashed(signer, slashId);
-    }
-
-    /// @dev Recovers each signature, checks EigenLayer operator-set membership, deduplicates.
-    /// An address is authorised if `AllocationManager.isMemberOfOperatorSet` returns true.
-    function _countUniqueOperatorSigs(bytes32 ethHash, bytes[] calldata signatures)
-        internal
-        view
-        returns (uint256 validSigs, address[] memory signers)
-    {
-        OperatorSet memory opSet = OperatorSet({
-            avs: address(this), 
-            id: ConstantsLib.OPERATOR_SET_ID
-        });
-        address[] memory seen = new address[](signatures.length);
-
-        for (uint256 i = 0; i < signatures.length; i++) {
-            (address signer, ECDSA.RecoverError err,) = ECDSA.tryRecover(ethHash, signatures[i]);
-            if (err != ECDSA.RecoverError.NoError) continue;
-            if (!_allocationManager.isMemberOfOperatorSet(signer, opSet)) continue;
-
-            bool duplicate = false;
-            for (uint256 j = 0; j < validSigs; j++) {
-                if (seen[j] == signer) {
-                    duplicate = true;
-                    break;
-                }
-            }
-            if (duplicate) continue;
-
-            seen[validSigs] = signer;
-            validSigs++;
-        }
-
-        signers = new address[](validSigs);
-        for (uint256 i = 0; i < validSigs; i++) {
-            signers[i] = seen[i];
-        }
+        emit EventsLib.OperatorSlashed(operator, slashId);
     }
 }

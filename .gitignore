@@ -20,3 +20,5 @@ src/frontend/dist/
 # Generated per-chain deployment artifacts (written by the deploy scripts; env-specific).
 # The committed test fixture lives in src/test/fixtures/deployments/.
 /deployments/*.json
+
+src/test/fixtures
