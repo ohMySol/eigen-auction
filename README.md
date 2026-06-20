@@ -13,7 +13,7 @@ On-chain accept a BLS-aggregated threshold signature from the operator set, veri
 - For the backend we need to replace the current single-operator signing in signer.ts with the BLS partial signature collection + submission to the aggregator.
 - LP dashboard, swap widget to sign SwapIntent and sent to operator RPC and pool statistics.
 
-I am welcome to everyone interested to contribute! If you have experience with anything listed below, you are welcomed twice:
+Everyone interested in contributing is welcome! If you have experience with any of the areas listed below, you're welcome twice over:
 - Unsiwap V3/V4 + hooks.
 - EigenLayer AVS operator software internals (e.g. smth similar to EigenDA, Lagrange, or Espresso operator nodes). BLS cryptography background with BLS12-381, P2P networking (libp2p or similar) for operator-to-aggregator communication is a plus.
 - Application-Specific-Sequencing with understanding of how per-block ordering works (Angstrom style for exmaple). This applied to both the auction design and how the operator selects and commits the winning `ToBOrder`. 
