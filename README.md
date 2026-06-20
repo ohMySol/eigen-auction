@@ -7,6 +7,17 @@ EigenAuction is a Uniswap V4 hook that eliminates Loss-versus-Rebalancing (LVR) 
 ## Current Project State
 This **project is in active development** so the code and documentation will change over the time. Once the project will be available in the testnet this section will mention this.
 
+For people interested in the project and want to contribute, here are the parts which require work and improvements:
+- Refactor auction results signing to BLS Signatures + Aggregator (Contracts + Backend):
+On-chain accept a BLS-aggregated threshold signature from the operator set, verified via EigenLayer's `BLSSignatureChecker` should require a recorded commitment before executing the settlement. On the backend side, build an aggregator that collects partial BLS signatures from operator nodes each block and submits the aggregate on-chain.
+- For the backend we need to replace the current single-operator signing in signer.ts with the BLS partial signature collection + submission to the aggregator.
+- LP dashboard, swap widget to sign SwapIntent and sent to operator RPC and pool statistics.
+
+I am welcome to everyone interested to contribute! If you have experience with anything listed below, you are welcomed twice:
+- Unsiwap V3/V4 + hooks.
+- EigenLayer AVS operator software internals (e.g. smth similar to EigenDA, Lagrange, or Espresso operator nodes). BLS cryptography background with BLS12-381, P2P networking (libp2p or similar) for operator-to-aggregator communication is a plus.
+- Application-Specific-Sequencing with understanding of how per-block ordering works (Angstrom style for exmaple). This applied to both the auction design and how the operator selects and commits the winning `ToBOrder`. 
+- For frontend standard web3 stack (wagmi/viem, EIP-712 signing).
 ---
 
 ## The Problem

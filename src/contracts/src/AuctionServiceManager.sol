@@ -157,7 +157,7 @@ contract AuctionServiceManager is ServiceManagerBase, IAuctionServiceManager, IA
 
     // Note: EigenLayer's AllocationManager defaults the AVS registrar to the AVS address itself when none is
     // set, so this contract IS its own registrar. Without these callback functions below `registerForOperatorSets` 
-    // would revert and no operator could ever join the set, making `commitWinner` permanently unsatisfiable.
+    // would revert and no operator could ever join the set.
     // I didn't implement a separate registrar contract because the logic is trivial.
 
     /// @inheritdoc IAVSRegistrar
