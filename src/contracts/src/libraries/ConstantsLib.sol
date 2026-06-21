@@ -13,4 +13,7 @@ library ConstantsLib {
 
     /// @notice Number of blocks without a settlement after which public swaps are re-allowed.
     uint256 public constant FALLBACK_PERIOD = 5;
+
+    /// @notice Denominator for the stake threshold expressed in basis points.
+    uint256 public constant BPS = 10_000;
 }

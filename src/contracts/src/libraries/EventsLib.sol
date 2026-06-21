@@ -7,7 +7,7 @@ import {PoolId} from "v4-core/types/PoolId.sol";
 /// @author @ohMySol
 /// @notice A library that defines the events for EigenAuction Hook smart contract system
 library EventsLib {
-    /* AuctionServiceManager Events  */
+    /* ───────────────────────── AuctionServiceManager Events ───────────────────────── */
 
     /// @notice Emitted when an operator records the arb order it included for a (pool, block)
     /// @param poolId ID of the pool
@@ -50,7 +50,7 @@ library EventsLib {
     /// @param operatorSetId The operator set the operator left
     event OperatorDeregistered(address indexed operator, uint32 operatorSetId);
 
-    /* EigenAuctionHook Events  */
+    /* ───────────────────────── EigenAuctionHook Events  ───────────────────────── */
 
     /// @notice Emitted when a winning arb swap settles and the operator's reward is folded into LP rewards
     /// @param poolId ID of the pool
@@ -100,7 +100,7 @@ library EventsLib {
         uint128 liquidity
     );
 
-    /* Settler Events */
+    /* ───────────────────────── Settler Events ───────────────────────── */
 
     /// @notice Emitted when a user swap intent is successfully filled
     /// @param poolId Pool the intent was filled against
@@ -145,9 +145,23 @@ library EventsLib {
     /// @param operator AVS winner that executed the settlement
     event BlockSettled(PoolId indexed poolId, uint256 indexed blockNumber, address indexed operator);
 
-    /* EigenAuctionHook Events — venue lock */
+    /* ───────────────────────── EigenAuctionHook Events — venue lock ───────────────────────── */
 
     /// @notice Emitted when the settler address is registered on the hook
     /// @param settler The settler contract address
     event SettlerSet(address indexed settler);
+
+    /* ───────────────────────── EigenAuctionTaskManager Events ───────────────────────── */
+
+    /// @notice Emitted once a quorum-attested searcher winner is recorded for a (pool, block).
+    /// @param poolId Pool ID the winner is committed for
+    /// @param targetBlock Block for which the winner is commited
+    /// @param executor Address of the operator who was selected to send a batch tx
+    /// @param resultHash ???
+    event WinnerCommitted(
+        PoolId indexed poolId, 
+        uint256 indexed targetBlock, 
+        address indexed executor, 
+        bytes32 resultHash
+    );
 }

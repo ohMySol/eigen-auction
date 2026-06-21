@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 /// @author @ohMySol
 /// @notice A library that defines the errors for EigenAuction Hook smart contract system
 library ErrorsLib {
-    /* EigenAuctionHook Errors */
+    /* ───────────────────────── EigenAuctionHook Errors ───────────────────────── */
 
     /// @notice Thrown during construction when a required address argument is the zero address
     error EigenAuctionHook_ZeroAddress();
@@ -33,10 +33,7 @@ library ErrorsLib {
     /// value, indicating a JIT add landed between the operator's snapshot and the swap
     error EigenAuctionHook_LiquidityMismatch();
 
-    /* AuctionServiceManager / MockAuctionServiceManager Errors */
-
-    /// @notice Thrown by MockAuctionServiceManager when the caller is not the mock owner
-    error AuctionServiceManager_NotOwner();
+    /* ───────────────────────── AuctionServiceManager / MockAuctionServiceManager Errors ───────────────────────── */
 
     /// @notice Thrown when `recordSettlement` is called by an address other than the registered settler
     error AuctionServiceManager_NotSettler();
@@ -77,7 +74,7 @@ library ErrorsLib {
     /// @notice Thrown when registering for an operator set id this AVS does not run
     error AuctionServiceManager_InvalidOperatorSet();
 
-    /* Settler Errors */
+    /* ───────────────────────── Settler Errors ───────────────────────── */
 
     /// @notice Thrown when `unlockCallback` is called by an address other than the pool manager
     error Settler_NotPoolManager();
@@ -127,4 +124,22 @@ library ErrorsLib {
 
     /// @notice Thrown when any address passed to `Settler` constructor is zero address
     error Settler_ConstructorZeroAddress();
+
+    /* ───────────────────────── EigenAuctionTaskManager Errors ───────────────────────── */
+
+    error EigenAuctionTaskManager_ZeroExecutor();
+
+    error EigenAuctionTaskManager_WrongTargetBlock();
+
+    error EigenAuctionTaskManager_FutureReferenceBlock();
+
+    error EigenAuctionTaskManager_AlreadyCommitted();
+
+    error EigenAuctionTaskManager_QuorumNotMet();
+
+    error EigenAuctionTaskManager_QuorumNumbersMismatch();
+
+    error EigenAuctionTaskManager_EmptyQuorumNumbers();
+
+    error EigenAuctionTaskManager_InvalidThreshold();
 }
