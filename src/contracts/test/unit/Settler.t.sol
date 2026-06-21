@@ -14,15 +14,17 @@ import {Settler} from "../../src/Settler.sol";
 import {SwapIntent, INTENT_TYPEHASH} from "../../src/types/SwapIntent.sol";
 import {ToBOrder, TOB_ORDER_TYPEHASH} from "../../src/types/ToBOrder.sol";
 import {MockAuctionServiceManager} from "../mocks/MockAuctionServiceManager.sol";
+import {MockTaskManager} from "../mocks/MockTaskManager.sol";
 import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 
-/// @notice Tests for the operator-batch Settler against a real V4 pool: operator-gated settlement,
+/// @notice Tests for the commitment-gated Settler against a real V4 pool: commitment + executor gate,
 /// signed ToBOrder arb with on-chain bid derivation, and uniform-clearing-price user batches.
 contract SettlerTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
 
     EigenAuctionHook hook;
     MockAuctionServiceManager mockAvs;
+    MockTaskManager taskManager;
     Settler settler;
     PoolKey poolKey;
     PoolId poolId;
@@ -53,7 +55,8 @@ contract SettlerTest is Test, Deployers {
 
         (poolKey, poolId) = initPool(currency0, currency1, hook, 3000, 60, SQRT_PRICE_1_1);
 
-        settler = new Settler(address(manager), address(mockAvs));
+        taskManager = new MockTaskManager();
+        settler = new Settler(address(manager), address(mockAvs), address(taskManager));
         hook.setSettler(address(settler));
         mockAvs.setSettler(address(settler));
 
@@ -88,6 +91,15 @@ contract SettlerTest is Test, Deployers {
 
     function _noIntents() internal pure returns (SwapIntent[] memory) {
         return new SwapIntent[](0);
+    }
+
+    /// @dev Records the quorum commitment the Settler gate reads: binds the exact batch (via its
+    /// `resultHash`) and the operator allowed to relay it for the current block.
+    function _seedCommitment(ToBOrder memory arb, uint256 price, SwapIntent[] memory intents, address executor)
+        internal
+    {
+        bytes32 resultHash = settler.computeResultHash(arb, price, intents);
+        taskManager.setCommitment(poolId, block.number, resultHash, executor);
     }
 
     function _signIntent(uint256 pk, bool zeroForOne, uint128 amountIn, uint128 minOut, uint64 nonce)
@@ -142,26 +154,58 @@ contract SettlerTest is Test, Deployers {
         a.signature = abi.encodePacked(r, s, v);
     }
 
-    /* ACCESS CONTROL */
+    /* COMMITMENT GATE */
 
-    function test_Settle_NonOperator_Reverts() public {
+    // With no quorum commitment for the block, settlement is rejected outright.
+    function test_Settle_NoCommitment_Reverts() public {
         SwapIntent[] memory intents = new SwapIntent[](1);
         intents[0] = _signIntent(USER_PK, true, 0.5e18, 0, 1);
-        vm.expectRevert(ErrorsLib.Settler_NotOperator.selector);
+        vm.prank(OPERATOR);
+        vm.expectRevert(ErrorsLib.Settler_NoCommitment.selector);
         settler.settle(poolKey, _emptyArb(), intents, Q128);
     }
 
-    function test_Settle_OncePerBlock_Reverts() public {
+    // A batch that doesn't reproduce the committed resultHash (here: a different price) is rejected.
+    function test_Settle_ResultMismatch_Reverts() public {
         SwapIntent[] memory intents = new SwapIntent[](1);
         intents[0] = _signIntent(USER_PK, true, 0.5e18, 0, 1);
 
-        vm.startPrank(OPERATOR);
-        settler.settle(poolKey, _emptyArb(), intents, (Q128 * 99) / 100);
+        // Commit to one price, then try to settle the same intents at another.
+        _seedCommitment(_emptyArb(), Q128, intents, OPERATOR);
 
-        SwapIntent[] memory intents2 = new SwapIntent[](1);
-        intents2[0] = _signIntent(USER_PK, true, 0.5e18, 0, 2);
+        vm.prank(OPERATOR);
+        vm.expectRevert(ErrorsLib.Settler_ResultMismatch.selector);
+        settler.settle(poolKey, _emptyArb(), intents, (Q128 * 99) / 100);
+    }
+
+    // The committed batch can only be relayed by the committed executor, not any other operator.
+    function test_Settle_NotExecutor_Reverts() public {
+        uint256 price = (Q128 * 99) / 100;
+        SwapIntent[] memory intents = new SwapIntent[](1);
+        intents[0] = _signIntent(USER_PK, true, 0.5e18, 0, 1);
+
+        _seedCommitment(_emptyArb(), price, intents, OPERATOR);
+
+        // Correct batch, wrong sender.
+        vm.prank(address(0xBEEF));
+        vm.expectRevert(ErrorsLib.Settler_NotExecutor.selector);
+        settler.settle(poolKey, _emptyArb(), intents, price);
+    }
+
+    function test_Settle_OncePerBlock_Reverts() public {
+        uint256 price = (Q128 * 99) / 100;
+        SwapIntent[] memory intents = new SwapIntent[](1);
+        intents[0] = _signIntent(USER_PK, true, 0.5e18, 0, 1);
+
+        _seedCommitment(_emptyArb(), price, intents, OPERATOR);
+
+        vm.startPrank(OPERATOR);
+        settler.settle(poolKey, _emptyArb(), intents, price);
+
+        // Replaying the same committed batch in the same block is stopped by the hook's once-per-block
+        // guard (reached before the consumed nonce would trip).
         vm.expectRevert(ErrorsLib.EigenAuctionHook_AlreadySettledThisBlock.selector);
-        settler.settle(poolKey, _emptyArb(), intents2, (Q128 * 99) / 100);
+        settler.settle(poolKey, _emptyArb(), intents, price);
         vm.stopPrank();
     }
 
@@ -177,6 +221,8 @@ contract SettlerTest is Test, Deployers {
 
         SwapIntent[] memory intents = new SwapIntent[](1);
         intents[0] = _signIntent(USER_PK, true, amountIn, expectedOut, 1);
+
+        _seedCommitment(_emptyArb(), price, intents, OPERATOR);
 
         uint256 before1 = MockERC20(Currency.unwrap(currency1)).balanceOf(user);
         vm.prank(OPERATOR);
@@ -196,6 +242,8 @@ contract SettlerTest is Test, Deployers {
         intents[0] = _signIntent(USER_PK, true, inA, 0, 1);
         intents[1] = _signIntent(USER2_PK, false, inB, 0, 1);
 
+        _seedCommitment(_emptyArb(), price, intents, OPERATOR);
+
         uint256 u1Before = MockERC20(Currency.unwrap(currency1)).balanceOf(user);
         uint256 u2Before = MockERC20(Currency.unwrap(currency0)).balanceOf(user2);
 
@@ -208,11 +256,15 @@ contract SettlerTest is Test, Deployers {
     }
 
     function test_Settle_SlippageExceeded_Reverts() public {
+        uint256 price = (Q128 * 99) / 100;
         SwapIntent[] memory intents = new SwapIntent[](1);
         intents[0] = _signIntent(USER_PK, true, 1e18, type(uint128).max, 7);
+
+        _seedCommitment(_emptyArb(), price, intents, OPERATOR);
+
         vm.prank(OPERATOR);
         vm.expectRevert(ErrorsLib.Settler_SlippageExceeded.selector);
-        settler.settle(poolKey, _emptyArb(), intents, (Q128 * 99) / 100);
+        settler.settle(poolKey, _emptyArb(), intents, price);
     }
 
     /* ARB */
@@ -225,6 +277,8 @@ contract SettlerTest is Test, Deployers {
         uint128 quantityOut = 1e18;
         uint128 quantityIn = 1.05e18; // generous input; surplus over ammIn is the bid
         ToBOrder memory arb = _signArb(ARBER_PK, true, quantityIn, quantityOut);
+
+        _seedCommitment(arb, 0, _noIntents(), OPERATOR);
 
         vm.prank(OPERATOR);
         settler.settle(poolKey, arb, _noIntents(), 0);
@@ -242,6 +296,8 @@ contract SettlerTest is Test, Deployers {
         uint128 quantityIn = 0.5e18; // far below what the AMM needs
         ToBOrder memory arb = _signArb(ARBER_PK, true, quantityIn, quantityOut);
 
+        _seedCommitment(arb, 0, _noIntents(), OPERATOR);
+
         vm.prank(OPERATOR);
         vm.expectRevert(ErrorsLib.Settler_NegativeBid.selector);
         settler.settle(poolKey, arb, _noIntents(), 0);
@@ -251,6 +307,10 @@ contract SettlerTest is Test, Deployers {
     function test_Settle_Arb_WrongBlock_Reverts() public {
         ToBOrder memory arb = _signArb(ARBER_PK, true, 1.05e18, 1e18);
         vm.roll(block.number + 1);
+
+        // Commitment exists for the settle block; the arb itself is stale (validForBlock is last block).
+        _seedCommitment(arb, 0, _noIntents(), OPERATOR);
+
         vm.prank(OPERATOR);
         vm.expectRevert(ErrorsLib.Settler_WrongBlock.selector);
         settler.settle(poolKey, arb, _noIntents(), 0);

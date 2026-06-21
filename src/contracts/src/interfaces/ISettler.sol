@@ -5,6 +5,7 @@ import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 
 import {IAuctionServiceManager} from "./IAuctionServiceManager.sol";
+import {ICommitmentReader} from "./ICommitmentReader.sol";
 import {SwapIntent} from "../types/SwapIntent.sol";
 import {ToBOrder} from "../types/ToBOrder.sol";
 
@@ -39,7 +40,9 @@ interface ISettler {
     /* SETTLEMENT */
 
     /// @notice Settle a block for `key`: execute the arb order, then clear user intents at one price.
-    /// @dev Caller must be an AVS-registered operator. Reverts if both the arb order is empty
+    /// @dev Gated by the TaskManager commitment for `(poolId, block.number)`: a commitment must exist,
+    /// the submitted batch must reproduce its `resultHash` (see `computeResultHash`), and the caller
+    /// must be the committed `executor`. Also reverts if both the arb order is empty
     /// (`quantityIn == quantityOut == 0`) and `intents` is empty, if a pool was already settled this
     /// block, or if the batch is insolvent at the supplied clearing price.
     ///
@@ -69,9 +72,23 @@ interface ISettler {
     /// @notice The Uniswap V4 pool manager this settler submits swaps to.
     function poolManager() external view returns (IPoolManager);
 
-    /// @notice The AVS service manager that authorizes operators and records settlements.
+    /// @notice The AVS service manager that records settlements for the fraud-proof challenge.
     function avs() external view returns (IAuctionServiceManager);
+
+    /// @notice The TaskManager whose quorum-attested commitments gate settlement.
+    function taskManager() external view returns (ICommitmentReader);
 
     /// @notice EIP-712 domain separator used when verifying intent and arb-order signatures.
     function DOMAIN_SEPARATOR() external view returns (bytes32);
+
+    /// @notice Re-derives the committed `resultHash` for a batch: the value the executor must match
+    /// against `getCommitment(poolId, block.number).resultHash` at settle time. Off-chain operators
+    /// sign this same digest. Hashes order/intent terms (not signatures).
+    /// @param arb The top-of-block arb order (all-zero amounts for an arb-less batch).
+    /// @param clearingPriceX128 Uniform clearing price for the user intents.
+    /// @param intents The user intents in the order they are committed.
+    function computeResultHash(ToBOrder calldata arb, uint256 clearingPriceX128, SwapIntent[] calldata intents)
+        external
+        pure
+        returns (bytes32);
 }

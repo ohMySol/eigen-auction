@@ -157,7 +157,8 @@ library EventsLib {
     /// @param poolId Pool ID the winner is committed for
     /// @param targetBlock Block for which the winner is commited
     /// @param executor Address of the operator who was selected to send a batch tx
-    /// @param resultHash ???
+    /// @param resultHash `keccak256(arbOrderHash, clearingPriceX128, intentsRoot)` the executor must
+    /// reproduce at settle time
     event WinnerCommitted(
         PoolId indexed poolId, 
         uint256 indexed targetBlock, 

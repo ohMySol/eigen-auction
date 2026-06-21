@@ -125,6 +125,15 @@ library ErrorsLib {
     /// @notice Thrown when any address passed to `Settler` constructor is zero address
     error Settler_ConstructorZeroAddress();
 
+    /// @notice Thrown when settling a (pool, block) that has no quorum-attested commitment
+    error Settler_NoCommitment();
+
+    /// @notice Thrown when the batch the caller submitted does not reproduce the committed `resultHash`
+    error Settler_ResultMismatch();
+
+    /// @notice Thrown when the caller is not the executor bound in the commitment
+    error Settler_NotExecutor();
+
     /* ───────────────────────── EigenAuctionTaskManager Errors ───────────────────────── */
 
     error EigenAuctionTaskManager_ZeroExecutor();

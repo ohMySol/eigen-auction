@@ -15,6 +15,8 @@ import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 
 import {ISettler} from "./interfaces/ISettler.sol";
 import {IAuctionServiceManager} from "./interfaces/IAuctionServiceManager.sol";
+import {ICommitmentReader} from "./interfaces/ICommitmentReader.sol";
+import {Commitment} from "./types/Commitment.sol";
 import {SwapIntent, INTENT_TYPEHASH} from "./types/SwapIntent.sol";
 import {ToBOrder, TOB_ORDER_TYPEHASH} from "./types/ToBOrder.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
@@ -73,6 +75,9 @@ contract Settler is ISettler, IUnlockCallback {
     IAuctionServiceManager public immutable avs;
 
     /// @inheritdoc ISettler
+    ICommitmentReader public immutable taskManager;
+
+    /// @inheritdoc ISettler
     bytes32 public immutable DOMAIN_SEPARATOR;
 
     /* STORAGE */
@@ -95,12 +100,15 @@ contract Settler is ISettler, IUnlockCallback {
     /* CONSTRUCTOR */
 
     /// @param _poolManager Uniswap V4 pool manager.
-    /// @param _avs AVS service manager that authorizes operators and records settlements.
-    constructor(address _poolManager, address _avs) {
+    /// @param _avs AVS service manager that records settlements for the fraud-proof challenge.
+    /// @param _taskManager EigenAuctionTaskManager whose commitments gate settlement. May be the 
+    /// zero address in a partial deploy, in which case `settle` reverts on the first commitment read until it is set.
+    constructor(address _poolManager, address _avs, address _taskManager) {
         if (_poolManager == address(0) || _avs == address(0)) revert ErrorsLib.Settler_ConstructorZeroAddress();
 
         poolManager = IPoolManager(_poolManager);
         avs = IAuctionServiceManager(_avs);
+        taskManager = ICommitmentReader(_taskManager);
 
         DOMAIN_SEPARATOR = keccak256(
             abi.encode(
@@ -154,10 +162,19 @@ contract Settler is ISettler, IUnlockCallback {
         if (!hasArb && intents.length == 0) revert ErrorsLib.Settler_NothingToSettle();
         if (intents.length != 0 && clearingPriceX128 == 0) revert ErrorsLib.Settler_ZeroClearingPrice();
 
-        // Only an AVS-registered operator may settle, and only once per block per pool.
-        if (!avs.isOperator(msg.sender)) revert ErrorsLib.Settler_NotOperator();
-
         PoolId poolId = key.toId();
+
+        // The quorum attested this exact batch for this block and bound the operator allowed to relay
+        // it. Re-derive the result and match it against the commitment before any state changes, so an
+        // executor can only push the batch the operator set actually signed off on.
+        Commitment memory commitment = taskManager.getCommitment(poolId, block.number);
+        if (!commitment.exists) revert ErrorsLib.Settler_NoCommitment();
+        if (computeResultHash(arb, clearingPriceX128, intents) != commitment.resultHash) {
+            revert ErrorsLib.Settler_ResultMismatch();
+        }
+        if (msg.sender != commitment.executor) revert ErrorsLib.Settler_NotExecutor();
+
+        // Settles at most once per block per pool (enforced by the hook).
         IHook(address(key.hooks)).recordSettlement(poolId);
 
         poolManager.unlock(
@@ -377,6 +394,32 @@ contract Settler is ISettler, IUnlockCallback {
         return _nonces[user][uint248(nonce >> 8)] & (1 << (nonce & 0xff)) != 0;
     }
 
+    /* RESULT HASH */
+
+    /// @inheritdoc ISettler
+    /// @dev On-chain definition of the committed `resultHash`. The off-chain aggregator MUST
+    /// build the operator-signed digest the same way: resultHash = keccak256(arbOrderHash, clearingPriceX128, intentsRoot)
+    /// where `arbOrderHash` is the searcher's EIP-712 struct hash (or `bytes32(0)` for an empty arb) and
+    /// `intentsRoot = keccak256(abi.encode([intent struct hashes...]))` over the intents in order.
+    /// Hashing terms (not signatures) keeps the commitment independent of signature malleability.
+    function computeResultHash(ToBOrder calldata arb, uint256 clearingPriceX128, SwapIntent[] calldata intents)
+        public
+        pure
+        returns (bytes32)
+    {
+        bool hasArb = arb.quantityIn != 0 || arb.quantityOut != 0;
+        bytes32 arbOrderHash = hasArb ? _arbStructHash(arb) : bytes32(0);
+
+        uint256 n = intents.length;
+        bytes32[] memory hashes = new bytes32[](n);
+        for (uint256 i; i < n; ++i) {
+            hashes[i] = _intentStructHash(intents[i]);
+        }
+        bytes32 intentsRoot = keccak256(abi.encode(hashes));
+
+        return keccak256(abi.encode(arbOrderHash, clearingPriceX128, intentsRoot));
+    }
+    
     /* INTERNAL — TOKEN MOVEMENT */
 
     /// @dev Pulls `amount` of `currency` from `from`: debits internal balance when `useInternal`, else
@@ -435,7 +478,25 @@ contract Settler is ISettler, IUnlockCallback {
     }
 
     function _verifyIntent(SwapIntent memory intent) private view {
-        bytes32 structHash = keccak256(
+        bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN_SEPARATOR, _intentStructHash(intent)));
+        address signer = _recover(digest, intent.signature);
+
+        if (signer == address(0) || signer != intent.user) revert ErrorsLib.Settler_InvalidSignature();
+    }
+
+    function _verifyArb(PoolKey memory key, ToBOrder memory arb) private view {
+        if (arb.poolId != PoolId.unwrap(key.toId())) revert ErrorsLib.Settler_WrongPool();
+        if (arb.validForBlock != block.number) revert ErrorsLib.Settler_WrongBlock();
+
+        bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN_SEPARATOR, _arbStructHash(arb)));
+        address signer = _recover(digest, arb.signature);
+
+        if (signer == address(0) || signer != arb.searcher) revert ErrorsLib.Settler_InvalidArbSignature();
+    }
+
+    /// @dev EIP-712 struct hash of an intent's terms (signature excluded).
+    function _intentStructHash(SwapIntent memory intent) private pure returns (bytes32) {
+        return keccak256(
             abi.encode(
                 INTENT_TYPEHASH,
                 intent.user,
@@ -448,18 +509,11 @@ contract Settler is ISettler, IUnlockCallback {
                 intent.deadline
             )
         );
-        
-        bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN_SEPARATOR, structHash));
-        address signer = _recover(digest, intent.signature);
-        
-        if (signer == address(0) || signer != intent.user) revert ErrorsLib.Settler_InvalidSignature();
     }
 
-    function _verifyArb(PoolKey memory key, ToBOrder memory arb) private view {
-        if (arb.poolId != PoolId.unwrap(key.toId())) revert ErrorsLib.Settler_WrongPool();
-        if (arb.validForBlock != block.number) revert ErrorsLib.Settler_WrongBlock();
-        
-        bytes32 structHash = keccak256(
+    /// @dev EIP-712 struct hash of an arb order's terms (signature excluded).
+    function _arbStructHash(ToBOrder memory arb) private pure returns (bytes32) {
+        return keccak256(
             abi.encode(
                 TOB_ORDER_TYPEHASH,
                 arb.searcher,
@@ -471,10 +525,6 @@ contract Settler is ISettler, IUnlockCallback {
                 arb.validForBlock
             )
         );
-        bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN_SEPARATOR, structHash));
-        address signer = _recover(digest, arb.signature);
-        
-        if (signer == address(0) || signer != arb.searcher) revert ErrorsLib.Settler_InvalidArbSignature();
     }
 
     function _recover(bytes32 digest, bytes memory sig) private pure returns (address) {

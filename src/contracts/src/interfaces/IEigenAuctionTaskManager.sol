@@ -4,24 +4,16 @@ pragma solidity ^0.8.0;
 import {PoolId} from "v4-core/types/PoolId.sol";
 import {IBLSSignatureCheckerTypes} from "eigenlayer-middleware/src/interfaces/IBLSSignatureChecker.sol";
 
-/// @notice A quorum-attested auction result for a single (pool, block).
-/// @dev The mapping key (target block) doubles as the commit block, so it isn't stored again.
-/// @param resultHash `keccak256(arbOrderHash, clearingPriceX128, intentsRoot)` — the exact batch the
-/// executor must reproduce at settle time.
-/// @param signatoryRecordHash Identifies the operators that signed; consumed by the fraud-proof slash.
-/// @param executor The off-chain selected operator allowed to call `settle` for this commitment.
-/// @param exists Whether a commitment was recorded (zero-struct guard).
-struct Commitment {
-    bytes32 resultHash;
-    bytes32 signatoryRecordHash;
-    address executor;
-    bool exists;
-}
+import {ICommitmentReader} from "./ICommitmentReader.sol";
+import {Commitment} from "../types/Commitment.sol";
 
 /// @title IEigenAuctionTaskManager
 /// @author ohMySol
 /// @notice Interface for EigenAuctionTaskManager.
-interface IEigenAuctionTaskManager {
+/// @dev Extends the `ICommitmentReader` (the Settler-facing `getCommitment` surface)
+/// with the BLS-dependent write/admin surface. The `Commitment` struct lives in `types/` so the
+/// reader stays free of the `^0.8.27` middleware graph imported below.
+interface IEigenAuctionTaskManager is ICommitmentReader {
     /// @notice Quorums whose aggregate signature must clear the threshold, one byte per quorum id.
     /// EigenLayer organizes restaked operators into numbered quorums (groups) which typically segmented 
     /// by strategy/token type. Each byte in this bytes value is one quorum ID
@@ -62,7 +54,4 @@ interface IEigenAuctionTaskManager {
         bytes calldata quorums,
         IBLSSignatureCheckerTypes.NonSignerStakesAndSignature calldata nonSignerStakesAndSignature
     ) external;
-
-    /// @notice The commitment for `(poolId, targetBlock)`, or a zero struct if none exists.
-    function getCommitment(PoolId poolId, uint256 targetBlock) external view returns (Commitment memory);
 }

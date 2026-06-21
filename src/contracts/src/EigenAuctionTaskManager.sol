@@ -5,7 +5,9 @@ import {BLSSignatureChecker} from "eigenlayer-middleware/src/BLSSignatureChecker
 import {ISlashingRegistryCoordinator} from "eigenlayer-middleware/src/interfaces/ISlashingRegistryCoordinator.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
 
-import {IEigenAuctionTaskManager, Commitment} from "./interfaces/IEigenAuctionTaskManager.sol";
+import {IEigenAuctionTaskManager} from "./interfaces/IEigenAuctionTaskManager.sol";
+import {ICommitmentReader} from "./interfaces/ICommitmentReader.sol";
+import {Commitment} from "./types/Commitment.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {EventsLib} from "./libraries/EventsLib.sol";
 import {ConstantsLib} from "./libraries/ConstantsLib.sol";
@@ -98,7 +100,7 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
 
     /* VIEWS */
 
-    /// @inheritdoc IEigenAuctionTaskManager
+    /// @inheritdoc ICommitmentReader
     function getCommitment(PoolId poolId, uint256 targetBlock) external view override returns (Commitment memory) {
         return _commitments[poolId][targetBlock];
     }
