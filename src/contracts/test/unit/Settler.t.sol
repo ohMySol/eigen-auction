@@ -8,14 +8,16 @@ import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
+import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 
 import {EigenAuctionHook} from "../../src/EigenAuctionHook.sol";
 import {Settler} from "../../src/Settler.sol";
 import {SwapIntent, INTENT_TYPEHASH} from "../../src/types/SwapIntent.sol";
 import {ToBOrder, TOB_ORDER_TYPEHASH} from "../../src/types/ToBOrder.sol";
-import {MockAuctionServiceManager} from "../mocks/MockAuctionServiceManager.sol";
+import {MockEigenAuctionServiceManager} from "../mocks/MockEigenAuctionServiceManager.sol";
 import {MockTaskManager} from "../mocks/MockTaskManager.sol";
 import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
+import {ConstantsLib} from "../../src/libraries/ConstantsLib.sol";
 
 /// @notice Tests for the commitment-gated Settler against a real V4 pool: commitment + executor gate,
 /// signed ToBOrder arb with on-chain bid derivation, and uniform-clearing-price user batches.
@@ -23,7 +25,7 @@ contract SettlerTest is Test, Deployers {
     using PoolIdLibrary for PoolKey;
 
     EigenAuctionHook hook;
-    MockAuctionServiceManager mockAvs;
+    MockEigenAuctionServiceManager mockAvs;
     MockTaskManager taskManager;
     Settler settler;
     PoolKey poolKey;
@@ -45,7 +47,7 @@ contract SettlerTest is Test, Deployers {
         deployFreshManagerAndRouters();
         (currency0, currency1) = deployMintAndApprove2Currencies();
 
-        mockAvs = new MockAuctionServiceManager();
+        mockAvs = new MockEigenAuctionServiceManager();
         mockAvs.setOperator(OPERATOR, true);
 
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
@@ -56,9 +58,10 @@ contract SettlerTest is Test, Deployers {
         (poolKey, poolId) = initPool(currency0, currency1, hook, 3000, 60, SQRT_PRICE_1_1);
 
         taskManager = new MockTaskManager();
-        settler = new Settler(address(manager), address(mockAvs), address(taskManager));
+        // Deploy fee-free so the existing reward assertions hold; fee behaviour gets its own tests
+        // that raise the fee through governance (this test contract is the owner).
+        settler = new Settler(address(manager), address(mockAvs), address(taskManager), address(this), 0);
         hook.setSettler(address(settler));
-        mockAvs.setSettler(address(settler));
 
         // Seed liquidity through the hook so the LP is reward-tracked.
         _fundAndApprove(LP, 1_000e18);
@@ -314,5 +317,97 @@ contract SettlerTest is Test, Deployers {
         vm.prank(OPERATOR);
         vm.expectRevert(ErrorsLib.Settler_WrongBlock.selector);
         settler.settle(poolKey, arb, _noIntents(), 0);
+    }
+
+    /* OPERATOR FEE — GOVERNANCE */
+
+    function test_Constructor_SetsOwnerAndFeeDefaults() public view {
+        assertEq(settler.owner(), address(this));
+        assertEq(settler.operatorFeeBps(), 0);
+    }
+
+    function test_Constructor_FeeAboveCap_Reverts() public {
+        vm.expectRevert(ErrorsLib.Settler_FeeTooHigh.selector);
+        new Settler(
+            address(manager),
+            address(mockAvs),
+            address(taskManager),
+            address(this),
+            ConstantsLib.MAX_OPERATOR_FEE_BPS + 1
+        );
+    }
+
+    function test_Constructor_ZeroOwner_Reverts() public {
+        // Ownership is enforced by OpenZeppelin's `Ownable`, which rejects the zero owner first.
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
+        new Settler(address(manager), address(mockAvs), address(taskManager), address(0), 0);
+    }
+
+    function test_SetOperatorFeeBps_Updates() public {
+        settler.setOperatorFeeBps(750);
+        assertEq(settler.operatorFeeBps(), 750);
+    }
+
+    function test_SetOperatorFeeBps_AboveCap_Reverts() public {
+        vm.expectRevert(ErrorsLib.Settler_FeeTooHigh.selector);
+        settler.setOperatorFeeBps(ConstantsLib.MAX_OPERATOR_FEE_BPS + 1);
+    }
+
+    function test_SetOperatorFeeBps_NotOwner_Reverts() public {
+        vm.prank(address(0xBEEF));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(0xBEEF)));
+        settler.setOperatorFeeBps(750);
+    }
+
+    function test_TransferOwnership_Updates() public {
+        address newOwner = makeAddr("newOwner");
+        settler.transferOwnership(newOwner);
+        assertEq(settler.owner(), newOwner);
+
+        // Old owner (this test contract) can no longer govern.
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
+        settler.setOperatorFeeBps(100);
+    }
+
+    /* OPERATOR FEE — CARVE-OUT + FORWARDING */
+
+    // The fee is skimmed from the arb bid and pushed to the ServiceManager before LPs receive the
+    // remainder. fee + lpAmount must reproduce the gross bid at the configured bps.
+    function test_Settle_Arb_ForwardsOperatorFeeToAvs() public {
+        settler.setOperatorFeeBps(2000); // 20%
+        vm.roll(block.number + 1);
+
+        ToBOrder memory arb = _signArb(ARBER_PK, true, 1.05e18, 1e18);
+        _seedCommitment(arb, 0, _noIntents(), OPERATOR);
+
+        address asset = Currency.unwrap(currency0);
+        uint256 avsBefore  = MockERC20(asset).balanceOf(address(mockAvs));
+        uint256 hookBefore = MockERC20(asset).balanceOf(address(hook));
+
+        vm.prank(OPERATOR);
+        settler.settle(poolKey, arb, _noIntents(), 0);
+
+        uint256 fee      = MockERC20(asset).balanceOf(address(mockAvs)) - avsBefore;
+        uint256 lpAmount = MockERC20(asset).balanceOf(address(hook)) - hookBefore;
+
+        assertGt(fee, 0);
+        assertGt(lpAmount, 0);
+        // fee == floor(gross * 2000 / 10000)
+        assertEq(fee, ((fee + lpAmount) * 2000) / ConstantsLib.BPS);
+    }
+
+    // With a zero fee rate, nothing is forwarded to the ServiceManager.
+    function test_Settle_Arb_ZeroFee_NothingForwarded() public {
+        vm.roll(block.number + 1);
+        ToBOrder memory arb = _signArb(ARBER_PK, true, 1.05e18, 1e18);
+        _seedCommitment(arb, 0, _noIntents(), OPERATOR);
+
+        address asset = Currency.unwrap(currency0);
+        uint256 avsBefore = MockERC20(asset).balanceOf(address(mockAvs));
+
+        vm.prank(OPERATOR);
+        settler.settle(poolKey, arb, _noIntents(), 0);
+
+        assertEq(MockERC20(asset).balanceOf(address(mockAvs)), avsBefore);
     }
 }

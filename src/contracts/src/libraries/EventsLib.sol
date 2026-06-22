@@ -132,7 +132,7 @@ library EventsLib {
         bytes32 resultHash
     );
 
-    /// @notice Emitted when a commitment is proven fraudulent by a strictly-better arb order.
+    /// @notice Emitted when a commitment is proven fraudulent by a strictly-better arbitrage order.
     /// @param poolId Pool the disputed commitment belongs to
     /// @param targetBlock Block the disputed commitment targeted
     /// @param challenger Address that submitted the fraud proof

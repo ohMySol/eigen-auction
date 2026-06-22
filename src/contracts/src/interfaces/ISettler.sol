@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 
-import {IAuctionServiceManager} from "./IAuctionServiceManager.sol";
+import {IEigenAuctionServiceManager} from "./IEigenAuctionServiceManager.sol";
 import {ICommitmentReader} from "./ICommitmentReader.sol";
 import {SwapIntent} from "../types/SwapIntent.sol";
 import {ToBOrder} from "../types/ToBOrder.sol";
@@ -58,6 +58,15 @@ interface ISettler {
         uint256 clearingPriceX128
     ) external;
 
+    /* OPERATOR FEE / GOVERNANCE */
+
+    /// @notice Operator fee, in basis points, taken from each currency0 reward and forwarded to
+    /// the ServiceManager before LP distribution.
+    function operatorFeeBps() external view returns (uint256);
+
+    /// @notice Sets the operator fee rate. Owner-only; reverts above `MAX_OPERATOR_FEE_BPS`.
+    function setOperatorFeeBps(uint256 newOperatorFeeBps) external;
+
     /* NONCE MANAGEMENT */
 
     /// @notice Cancel a nonce so the corresponding pending intent can never be filled.
@@ -72,8 +81,8 @@ interface ISettler {
     /// @notice The Uniswap V4 pool manager this settler submits swaps to.
     function poolManager() external view returns (IPoolManager);
 
-    /// @notice The AVS service manager that records settlements for the fraud-proof challenge.
-    function avs() external view returns (IAuctionServiceManager);
+    /// @notice The AVS service manager; retained for operator-set membership and the rewards pipeline.
+    function avs() external view returns (IEigenAuctionServiceManager);
 
     /// @notice The TaskManager whose quorum-attested commitments gate settlement.
     function taskManager() external view returns (ICommitmentReader);

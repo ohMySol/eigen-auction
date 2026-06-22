@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ECDSA} from "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
+
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "v4-core/interfaces/callback/IUnlockCallback.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
@@ -14,19 +19,14 @@ import {FixedPoint128} from "v4-core/libraries/FixedPoint128.sol";
 import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 
 import {ISettler} from "./interfaces/ISettler.sol";
-import {IAuctionServiceManager} from "./interfaces/IAuctionServiceManager.sol";
+import {IEigenAuctionServiceManager} from "./interfaces/IEigenAuctionServiceManager.sol";
 import {ICommitmentReader} from "./interfaces/ICommitmentReader.sol";
 import {Commitment} from "./types/Commitment.sol";
 import {SwapIntent, INTENT_TYPEHASH} from "./types/SwapIntent.sol";
-import {ToBOrder, TOB_ORDER_TYPEHASH} from "./types/ToBOrder.sol";
+import {ToBOrder, toBStructHash} from "./types/ToBOrder.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {EventsLib} from "./libraries/EventsLib.sol";
-
-/// @dev Minimal ERC-20 surface needed for token settlement.
-interface IERC20 {
-    function transfer(address to, uint256 amount) external returns (bool);
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-}
+import {ConstantsLib} from "./libraries/ConstantsLib.sol";
 
 /// @dev Minimal hook surface used during settlement.
 interface IHook {
@@ -53,13 +53,14 @@ interface IHook {
 /// The bid is sent to the hook and folded into LP rewards at the post-arbitrage price.
 ///
 /// Step 2 — Uniform-clearing-price user batch.
-/// Every intent clears at the single operator-supplied `clearingPriceX128` (currency1 per currency0,
-/// Q128), so there is no intra-batch ordering MEV. Opposite-direction intents net against each other;
+/// Every intent clears at the single operator-supplied `clearingPriceX128` (currency1 per currency0,Q128), 
+/// so there is no intra-batch ordering MEV. Opposite-direction intents net against each other;
 /// only the leftover imbalance hits the AMM as one swap. Any currency0 residual goes to LPs. Each
 /// fill must satisfy the signer's `minAmountOut`, and the batch must be solvent or the call reverts.
-contract Settler is ISettler, IUnlockCallback {
+contract Settler is ISettler, IUnlockCallback, Ownable {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
+    using SafeERC20 for IERC20;
 
     /* CONSTANTS */
 
@@ -72,7 +73,7 @@ contract Settler is ISettler, IUnlockCallback {
     IPoolManager public immutable poolManager;
 
     /// @inheritdoc ISettler
-    IAuctionServiceManager public immutable avs;
+    IEigenAuctionServiceManager public immutable avs;
 
     /// @inheritdoc ISettler
     ICommitmentReader public immutable taskManager;
@@ -88,27 +89,50 @@ contract Settler is ISettler, IUnlockCallback {
     /// @inheritdoc ISettler
     mapping(address => mapping(address => uint256)) public balanceOf;
 
+    /// @inheritdoc ISettler
+    uint256 public operatorFeeBps;
+
     /// @dev Decoded settlement payload passed through the V4 unlock.
     struct SettleData {
-        address operator;
         PoolKey key;
         ToBOrder arb;
         SwapIntent[] intents;
         uint256 clearingPriceX128;
     }
 
+    /* MODIFIERS */
+
+    modifier onlyPoolManager() {
+        if (msg.sender != address(poolManager)) revert ErrorsLib.Settler_NotPoolManager();
+        _;
+    }
+
     /* CONSTRUCTOR */
 
     /// @param _poolManager Uniswap V4 pool manager.
-    /// @param _avs AVS service manager that records settlements for the fraud-proof challenge.
-    /// @param _taskManager EigenAuctionTaskManager whose commitments gate settlement. May be the 
-    /// zero address in a partial deploy, in which case `settle` reverts on the first commitment read until it is set.
-    constructor(address _poolManager, address _avs, address _taskManager) {
-        if (_poolManager == address(0) || _avs == address(0)) revert ErrorsLib.Settler_ConstructorZeroAddress();
+    /// @param _avs AVS service manager; receives the operator fee cut from each settlement and owns
+    /// the EigenLayer rewards submission surface.
+    /// @param _taskManager EigenAuctionTaskManager whose commitments gate settlement. May be the
+    /// zero address in a partial deploy — `settle` reverts on the first commitment read until it is set.
+    /// @param _owner Governance address that tunes the operator fee rate.
+    /// @param _operatorFeeBps Initial operator fee, in basis points. Must not exceed `MAX_OPERATOR_FEE_BPS`.
+    constructor(
+        address _poolManager, 
+        address _avs, 
+        address _taskManager, 
+        address _owner,
+        uint256 _operatorFeeBps
+    ) Ownable(_owner) {
+        if (_poolManager == address(0) || _avs == address(0)) {
+            revert ErrorsLib.Settler_ConstructorZeroAddress();
+        }
+        if (_operatorFeeBps > ConstantsLib.MAX_OPERATOR_FEE_BPS) revert ErrorsLib.Settler_FeeTooHigh();
 
         poolManager = IPoolManager(_poolManager);
-        avs = IAuctionServiceManager(_avs);
+        avs = IEigenAuctionServiceManager(_avs);
         taskManager = ICommitmentReader(_taskManager);
+
+        operatorFeeBps = _operatorFeeBps;
 
         DOMAIN_SEPARATOR = keccak256(
             abi.encode(
@@ -121,18 +145,20 @@ contract Settler is ISettler, IUnlockCallback {
         );
     }
 
-    /* MODIFIERS */
+    /* GOVERNANCE */
 
-    modifier onlyPoolManager() {
-        if (msg.sender != address(poolManager)) revert ErrorsLib.Settler_NotPoolManager();
-        _;
+    /// @inheritdoc ISettler
+    function setOperatorFeeBps(uint256 newOperatorFeeBps) external onlyOwner {
+        if (newOperatorFeeBps > ConstantsLib.MAX_OPERATOR_FEE_BPS) revert ErrorsLib.Settler_FeeTooHigh();
+        operatorFeeBps = newOperatorFeeBps;
+        emit EventsLib.OperatorFeeBpsSet(newOperatorFeeBps);
     }
 
     /* INTERNAL BALANCES */
 
     /// @inheritdoc ISettler
     function deposit(address asset, uint256 amount) external {
-        if (!IERC20(asset).transferFrom(msg.sender, address(this), amount)) revert ErrorsLib.Settler_TransferFailed();
+        IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
         balanceOf[asset][msg.sender] += amount;
         emit EventsLib.Deposited(asset, msg.sender, amount);
     }
@@ -140,12 +166,12 @@ contract Settler is ISettler, IUnlockCallback {
     /// @inheritdoc ISettler
     function withdraw(address asset, uint256 amount) external {
         uint256 bal = balanceOf[asset][msg.sender];
-        
+
         if (bal < amount) revert ErrorsLib.Settler_InsufficientBalance();
-        
+
         balanceOf[asset][msg.sender] = bal - amount;
-        
-        if (!IERC20(asset).transfer(msg.sender, amount)) revert ErrorsLib.Settler_TransferFailed();
+
+        IERC20(asset).safeTransfer(msg.sender, amount);
         emit EventsLib.Withdrawn(asset, msg.sender, amount);
     }
 
@@ -180,26 +206,13 @@ contract Settler is ISettler, IUnlockCallback {
         poolManager.unlock(
             abi.encode(
                 SettleData({
-                    operator: msg.sender, 
-                    key: key, 
-                    arb: arb, 
-                    intents: intents, 
+                    key: key,
+                    arb: arb,
+                    intents: intents,
                     clearingPriceX128: clearingPriceX128
                 })
             )
         );
-
-        // Record the included arb order so it can be challenged with a strictly-better one.
-        if (hasArb) {
-            avs.recordSettlement(
-                poolId, 
-                block.number, 
-                msg.sender, 
-                arb.zeroForOne, 
-                arb.quantityIn, 
-                arb.quantityOut
-            );
-        }
 
         emit EventsLib.BlockSettled(poolId, block.number, msg.sender);
     }
@@ -233,7 +246,7 @@ contract Settler is ISettler, IUnlockCallback {
         uint256 bid;
         if (arb.zeroForOne) {
             // Exact-output: receive exactly quantityOut token1, pay ammIn token0.
-            BalanceDelta detla = poolManager.swap(
+            BalanceDelta delta = poolManager.swap(
                 key,
                 SwapParams({
                     zeroForOne: true,
@@ -243,15 +256,15 @@ contract Settler is ISettler, IUnlockCallback {
                 hookData
             );
 
-            uint256 ammIn = uint256(uint128(-detla.amount0()));
+            uint256 ammIn = uint256(uint128(-delta.amount0()));
             if (arb.quantityIn < ammIn) revert ErrorsLib.Settler_NegativeBid();
 
             _pullIn(arb.searcher, key.currency0, arb.quantityIn, arb.useInternal);
             _settleToPool(key.currency0, ammIn);
-            
-            poolManager.take(key.currency1, address(this), uint256(uint128(detla.amount1())));
-            
-            _payOut(arb.searcher, key.currency1, uint256(uint128(detla.amount1())), arb.useInternal);
+
+            poolManager.take(key.currency1, address(this), uint256(uint128(delta.amount1())));
+
+            _payOut(arb.searcher, key.currency1, uint256(uint128(delta.amount1())), arb.useInternal);
 
             bid = arb.quantityIn - ammIn;
         } else {
@@ -408,7 +421,7 @@ contract Settler is ISettler, IUnlockCallback {
         returns (bytes32)
     {
         bool hasArb = arb.quantityIn != 0 || arb.quantityOut != 0;
-        bytes32 arbOrderHash = hasArb ? _arbStructHash(arb) : bytes32(0);
+        bytes32 arbOrderHash = hasArb ? toBStructHash(arb) : bytes32(0);
 
         uint256 n = intents.length;
         bytes32[] memory hashes = new bytes32[](n);
@@ -433,7 +446,7 @@ contract Settler is ISettler, IUnlockCallback {
             if (bal < amount) revert ErrorsLib.Settler_InsufficientBalance();
             balanceOf[asset][from] = bal - amount;
         } else {
-            if (!IERC20(asset).transferFrom(from, address(this), amount)) revert ErrorsLib.Settler_TransferFailed();
+            IERC20(asset).safeTransferFrom(from, address(this), amount);
         }
     }
 
@@ -441,30 +454,39 @@ contract Settler is ISettler, IUnlockCallback {
     /// out via ERC20.
     function _payOut(address to, Currency currency, uint256 amount, bool useInternal) private {
         if (amount == 0) return;
-        address asset = Currency.unwrap(currency)
-        ;
+        address asset = Currency.unwrap(currency);
+
         if (useInternal) {
             balanceOf[asset][to] += amount;
         } else {
-            if (!IERC20(asset).transfer(to, amount)) revert ErrorsLib.Settler_TransferFailed();
+            IERC20(asset).safeTransfer(to, amount);
         }
     }
 
     /// @dev Settles `amount` of `currency` from this contract's balance to the pool manager.
     function _settleToPool(Currency currency, uint256 amount) private {
         poolManager.sync(currency);
-        if (!IERC20(Currency.unwrap(currency)).transfer(address(poolManager), amount)) {
-            revert ErrorsLib.Settler_TransferFailed();
-        }
+        IERC20(Currency.unwrap(currency)).safeTransfer(address(poolManager), amount);
         poolManager.settle();
     }
 
-    /// @dev Sends a currency0 reward to the hook and folds it into LP rewards at the current price.
+    /// @dev Single point where captured currency0 value (arbitrage bid or batch residual) is routed out.
+    /// Takes the operator fee and pushes it to the ServiceManager so it can fund EigenLayer reward
+    /// submissions; forwards the remainder to the hook for LP distribution.
     function _rewardHook(PoolKey memory key, uint256 amount) private {
-        if (!IERC20(Currency.unwrap(key.currency0)).transfer(address(key.hooks), amount)) {
-            revert ErrorsLib.Settler_TransferFailed();
+        address asset = Currency.unwrap(key.currency0);
+
+        uint256 fee = (amount * operatorFeeBps) / ConstantsLib.BPS;
+        if (fee != 0) {
+            IERC20(asset).safeTransfer(address(avs), fee);
+            avs.receiveOperatorFee(asset, fee);
         }
-        IHook(address(key.hooks)).distributeReward(key, amount);
+
+        uint256 lpAmount = amount - fee;
+        if (lpAmount != 0) {
+            IERC20(asset).safeTransfer(address(key.hooks), lpAmount);
+            IHook(address(key.hooks)).distributeReward(key, lpAmount);
+        }
     }
 
     /* INTERNAL — NONCES & SIGNATURES */
@@ -479,19 +501,19 @@ contract Settler is ISettler, IUnlockCallback {
 
     function _verifyIntent(SwapIntent memory intent) private view {
         bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN_SEPARATOR, _intentStructHash(intent)));
-        address signer = _recover(digest, intent.signature);
+        (address signer, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, intent.signature);
 
-        if (signer == address(0) || signer != intent.user) revert ErrorsLib.Settler_InvalidSignature();
+        if (err != ECDSA.RecoverError.NoError || signer != intent.user) revert ErrorsLib.Settler_InvalidSignature();
     }
 
     function _verifyArb(PoolKey memory key, ToBOrder memory arb) private view {
         if (arb.poolId != PoolId.unwrap(key.toId())) revert ErrorsLib.Settler_WrongPool();
         if (arb.validForBlock != block.number) revert ErrorsLib.Settler_WrongBlock();
 
-        bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN_SEPARATOR, _arbStructHash(arb)));
-        address signer = _recover(digest, arb.signature);
+        bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN_SEPARATOR, toBStructHash(arb)));
+        (address signer, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, arb.signature);
 
-        if (signer == address(0) || signer != arb.searcher) revert ErrorsLib.Settler_InvalidArbSignature();
+        if (err != ECDSA.RecoverError.NoError || signer != arb.searcher) revert ErrorsLib.Settler_InvalidArbSignature();
     }
 
     /// @dev EIP-712 struct hash of an intent's terms (signature excluded).
@@ -509,34 +531,5 @@ contract Settler is ISettler, IUnlockCallback {
                 intent.deadline
             )
         );
-    }
-
-    /// @dev EIP-712 struct hash of an arb order's terms (signature excluded).
-    function _arbStructHash(ToBOrder memory arb) private pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                TOB_ORDER_TYPEHASH,
-                arb.searcher,
-                arb.poolId,
-                arb.zeroForOne,
-                arb.useInternal,
-                arb.quantityIn,
-                arb.quantityOut,
-                arb.validForBlock
-            )
-        );
-    }
-
-    function _recover(bytes32 digest, bytes memory sig) private pure returns (address) {
-        if (sig.length != 65) return address(0);
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-        assembly {
-            r := mload(add(sig, 0x20))
-            s := mload(add(sig, 0x40))
-            v := byte(0, mload(add(sig, 0x60)))
-        }
-        return ecrecover(digest, v, r, s);
     }
 }
