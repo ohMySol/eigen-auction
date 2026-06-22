@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId} from "v4-core/types/PoolId.sol";
 
-import {IAuctionServiceManager} from "./IAuctionServiceManager.sol";
+import {IEigenAuctionServiceManager} from "./IEigenAuctionServiceManager.sol";
 
 /// @title IEigenAuctionHook
 /// @author ohMySol
@@ -26,7 +26,7 @@ import {IAuctionServiceManager} from "./IAuctionServiceManager.sol";
 /// `removeLiquidity`; positions opened via external V4 routers are not tracked.
 interface IEigenAuctionHook {
     /// @notice The service manager that authorizes operators and records settlements.
-    function avs() external view returns (IAuctionServiceManager);
+    function avs() external view returns (IEigenAuctionServiceManager);
 
     /// @notice Address permitted to call `setSettler` once.
     function owner() external view returns (address);

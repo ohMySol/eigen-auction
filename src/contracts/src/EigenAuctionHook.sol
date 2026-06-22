@@ -15,7 +15,7 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapD
 import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 
 import {IEigenAuctionHook} from "./interfaces/IEigenAuctionHook.sol";
-import {IAuctionServiceManager} from "./interfaces/IAuctionServiceManager.sol";
+import {IEigenAuctionServiceManager} from "./interfaces/IEigenAuctionServiceManager.sol";
 import {Position, LiquidityCallback} from "./types/Position.sol";
 import {PoolRewards} from "./types/PoolRewards.sol";
 import {PoolRewardsLib} from "./libraries/PoolRewardsLib.sol";
@@ -56,7 +56,7 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     /* IMMUTABLES */
 
     /// @inheritdoc IEigenAuctionHook
-    IAuctionServiceManager public immutable avs;
+    IEigenAuctionServiceManager public immutable avs;
 
     /// @inheritdoc IEigenAuctionHook
     address public immutable owner;
@@ -84,7 +84,7 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     /// @param _owner Address permitted to call `setSettler` once.
     constructor(address _poolManager, address _avs, address _owner) BaseHook(IPoolManager(_poolManager)) {
         if (_avs == address(0) || _owner == address(0)) revert ErrorsLib.EigenAuctionHook_ZeroAddress();
-        avs = IAuctionServiceManager(_avs);
+        avs = IEigenAuctionServiceManager(_avs);
         owner = _owner;
     }
 

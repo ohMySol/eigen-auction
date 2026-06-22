@@ -7,12 +7,14 @@ pragma solidity ^0.8.0;
 /// The mapping key (target block) doubles as the commit block, so it isn't stored again.
 /// @param resultHash `keccak256(arbOrderHash, clearingPriceX128, intentsRoot)` — the exact batch the
 /// executor must reproduce at settle time (see `ISettler.computeResultHash`).
-/// @param signatoryRecordHash Identifies the operators that signed; consumed by the fraud-proof slash.
+/// @param hashOfNonSigners Identifies the hash of operators pub keys that didn't sign; consumed by the fraud-proof slash.
 /// @param executor The off-chain selected operator allowed to call `settle` for this commitment.
 /// @param exists Whether a commitment was recorded (zero-struct guard).
+/// @param challenged Whether a fraud proof has succeeded against this commitment.
 struct Commitment {
     bytes32 resultHash;
-    bytes32 signatoryRecordHash;
+    bytes32 hashOfNonSigners;
     address executor;
     bool exists;
+    bool challenged;
 }

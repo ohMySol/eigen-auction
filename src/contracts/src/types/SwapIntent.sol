@@ -34,5 +34,5 @@ struct SwapIntent {
     uint128 minAmountOut;
     uint64 nonce;
     uint64 deadline;
-    bytes  signature;
+    bytes signature;
 }

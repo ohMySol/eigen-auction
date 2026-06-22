@@ -14,7 +14,7 @@ import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 
 import {EigenAuctionHook} from "../../src/EigenAuctionHook.sol";
-import {MockAuctionServiceManager} from "../mocks/MockAuctionServiceManager.sol";
+import {MockEigenAuctionServiceManager} from "../mocks/MockEigenAuctionServiceManager.sol";
 import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 import {ConstantsLib} from "../../src/libraries/ConstantsLib.sol";
 import {ArbHelper} from "../helpers/ArbHelper.sol";
@@ -26,7 +26,7 @@ contract EigenAuctionHookTest is Test, Deployers {
     using StateLibrary for IPoolManager;
 
     EigenAuctionHook public hook;
-    MockAuctionServiceManager public mockAvs;
+    MockEigenAuctionServiceManager public mockAvs;
     ArbHelper public arbHelper;
     PoolKey public poolKey;
     PoolId public poolId;
@@ -41,7 +41,7 @@ contract EigenAuctionHookTest is Test, Deployers {
         deployFreshManagerAndRouters();
         (currency0, currency1) = deployMintAndApprove2Currencies();
 
-        mockAvs = new MockAuctionServiceManager();
+        mockAvs = new MockEigenAuctionServiceManager();
 
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
         address hookAddress = address(flags);
