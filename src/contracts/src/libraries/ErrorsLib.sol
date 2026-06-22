@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 /// @title ErrorsLib
-/// @author @ohMySol
+/// @author ohMySol
 /// @notice A library that defines the errors for EigenAuction Hook smart contract system
 library ErrorsLib {
     /* ───────────────────────── EigenAuctionHook Errors ───────────────────────── */
@@ -33,54 +33,18 @@ library ErrorsLib {
     /// value, indicating a JIT add landed between the operator's snapshot and the swap
     error EigenAuctionHook_LiquidityMismatch();
 
-    /* ───────────────────────── AuctionServiceManager / MockAuctionServiceManager Errors ───────────────────────── */
+    /* ───────────────────────── EigenAuctionServiceManager Errors ───────────────────────── */
 
-    /// @notice Thrown when `recordSettlement` is called by an address other than the registered settler
-    error AuctionServiceManager_NotSettler();
+    /// @notice Thrown when `receiveOperatorFee` is called by an address other than the registered Settler
+    error EigenAuctionServiceManager_NotSettler();
 
-    /// @notice Thrown when setting the settler to the zero address or after it is already set
-    error AuctionServiceManager_InvalidSettler();
-
-    /// @notice Thrown when recording a settlement for a (pool, block) that already has one
-    error AuctionServiceManager_AlreadySettled();
-
-    /// @notice Thrown when challenging a (pool, block) that has no recorded settlement
-    error AuctionServiceManager_NotSettled();
-
-    /// @notice Thrown when challenging a settlement that was already successfully challenged
-    error AuctionServiceManager_AlreadyChallenged();
-
-    /// @notice Thrown when the challenge window (CHALLENGE_WINDOW blocks) has closed
-    error AuctionServiceManager_ChallengeWindowClosed();
-
-    /// @notice Thrown when the challenge order does not strictly dominate the included arb order
-    error AuctionServiceManager_NotBetterOrder();
-
-    /// @notice Thrown when the challenge order's signature is invalid or does not match its arber
-    error AuctionServiceManager_InvalidOrderSignature();
-
-    /// @notice Thrown when the challenge order is not bound to the disputed (pool, block) or direction
-    error AuctionServiceManager_OrderMismatch();
-
-    /// @notice Thrown when `configureSlashing` is called with arrays of mismatched length
-    error AuctionServiceManager_SlashConfigLengthMismatch();
-
-    /// @notice Thrown when an `IAVSRegistrar` hook is called by an address other than the AllocationManager
-    error AuctionServiceManager_NotAllocationManager();
-
-    /// @notice Thrown when an operator-set registration targets an AVS other than this contract
-    error AuctionServiceManager_InvalidAvs();
-
-    /// @notice Thrown when registering for an operator set id this AVS does not run
-    error AuctionServiceManager_InvalidOperatorSet();
+    /// @notice Thrown when `setSettler` is given the zero address
+    error EigenAuctionServiceManager_ZeroAddress();
 
     /* ───────────────────────── Settler Errors ───────────────────────── */
 
     /// @notice Thrown when `unlockCallback` is called by an address other than the pool manager
     error Settler_NotPoolManager();
-
-    /// @notice Thrown when `settle` is called by an address that is not a registered AVS operator
-    error Settler_NotOperator();
 
     /// @notice Thrown when a top-of-block arb order carries an invalid EIP-712 signature
     error Settler_InvalidArbSignature();
@@ -119,9 +83,6 @@ library ErrorsLib {
     /// @notice Thrown when a user intent's `poolId` does not match the pool being settled
     error Settler_WrongPool();
 
-    /// @notice Thrown when an ERC20 `transferFrom` returns false during settlement
-    error Settler_TransferFailed();
-
     /// @notice Thrown when any address passed to `Settler` constructor is zero address
     error Settler_ConstructorZeroAddress();
 
@@ -134,21 +95,61 @@ library ErrorsLib {
     /// @notice Thrown when the caller is not the executor bound in the commitment
     error Settler_NotExecutor();
 
+    /// @notice Thrown when setting an operator fee above `MAX_OPERATOR_FEE_BPS`
+    error Settler_FeeTooHigh();
+
     /* ───────────────────────── EigenAuctionTaskManager Errors ───────────────────────── */
 
+    /// @notice Thrown when `commitWinner` is given the zero address as executor
     error EigenAuctionTaskManager_ZeroExecutor();
 
+    /// @notice Thrown when the committed `targetBlock` is not the current block
     error EigenAuctionTaskManager_WrongTargetBlock();
 
+    /// @notice Thrown when the stake-snapshot reference block is not strictly in the past
     error EigenAuctionTaskManager_FutureReferenceBlock();
 
+    /// @notice Thrown when a commitment already exists for the (pool, block)
     error EigenAuctionTaskManager_AlreadyCommitted();
 
+    /// @notice Thrown when a quorum's signed stake is below the configured threshold
     error EigenAuctionTaskManager_QuorumNotMet();
 
+    /// @notice Thrown when the supplied quorums do not match the configured `quorumNumbers`
     error EigenAuctionTaskManager_QuorumNumbersMismatch();
 
+    /// @notice Thrown when setting an empty quorum-numbers set
     error EigenAuctionTaskManager_EmptyQuorumNumbers();
 
+    /// @notice Thrown when setting a threshold of zero or above `BPS`
     error EigenAuctionTaskManager_InvalidThreshold();
+
+    /// @notice Thrown when challenging a (pool, block) that has no commitment
+    error EigenAuctionTaskManager_NoCommitment();
+
+    /// @notice Thrown when challenging a commitment that was already successfully challenged
+    error EigenAuctionTaskManager_AlreadyChallenged();
+
+    /// @notice Thrown when the challenge arrives after the CHALLENGE_WINDOW has closed
+    error EigenAuctionTaskManager_ChallengeWindowClosed();
+
+    /// @notice Thrown when the supplied committed arb + price + intentsRoot do not reproduce the
+    /// commitment's resultHash (so the order is not provably the one that was committed)
+    error EigenAuctionTaskManager_ResultMismatch();
+
+    /// @notice Thrown when the dominant order is not bound to the disputed pool/block/direction
+    error EigenAuctionTaskManager_OrderMismatch();
+
+    /// @notice Thrown when the challenge order does not strictly dominate the committed arb order
+    error EigenAuctionTaskManager_NotDominant();
+
+    /// @notice Thrown when the dominant order's signature is invalid or not from its searcher
+    error EigenAuctionTaskManager_InvalidOrderSignature();
+
+    /// @notice Thrown when the supplied reference block + non-signer hashes do not reproduce the
+    /// commitment's `hashOfNonSigners`, so the signer set cannot be trusted
+    error EigenAuctionTaskManager_SignatoryRecordMismatch();
+
+    /// @notice Thrown when the slashing config is set with no strategies or a zero wad
+    error EigenAuctionTaskManager_InvalidSlashingConfig();
 }

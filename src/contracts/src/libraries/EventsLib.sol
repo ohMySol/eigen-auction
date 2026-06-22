@@ -4,53 +4,21 @@ pragma solidity ^0.8.0;
 import {PoolId} from "v4-core/types/PoolId.sol";
 
 /// @title EventsLib
-/// @author @ohMySol
+/// @author ohMySol
 /// @notice A library that defines the events for EigenAuction Hook smart contract system
 library EventsLib {
-    /* ───────────────────────── AuctionServiceManager Events ───────────────────────── */
+    /* ───────────────────────── EigenAuctionServiceManager Events ───────────────────────── */
 
-    /// @notice Emitted when an operator records the arb order it included for a (pool, block)
-    /// @param poolId ID of the pool
-    /// @param blockNumber Block the settlement targeted
-    /// @param operator Operator that executed the settlement
-    /// @param quantityIn Input quantity of the included arb order
-    /// @param quantityOut Output quantity of the included arb order
-    event SettlementRecorded(
-        PoolId indexed poolId,
-        uint256 indexed blockNumber,
-        address indexed operator,
-        uint128 quantityIn,
-        uint128 quantityOut
-    );
-
-    /// @notice Emitted when a settlement is successfully challenged with a strictly-better arb order
-    /// @param poolId Pool the disputed settlement belongs to
-    /// @param blockNumber Block number of the disputed settlement
-    /// @param challenger Address that submitted the fraud proof
-    /// @param operator Operator that was slashed
-    event SettlementChallenged(
-        PoolId indexed poolId,
-        uint256 indexed blockNumber,
-        address indexed challenger,
-        address operator
-    );
-
-    /// @notice Emitted for each operator slashed after a successful challenge
-    /// @param operator Address of the slashed operator
-    /// @param slashId  Slash ID returned by AllocationManager
-    event OperatorSlashed(address indexed operator, uint256 slashId);
-
-    /// @notice Emitted when AllocationManager admits an operator into this AVS's operator set
-    /// @param operator Address of the registered operator
-    /// @param operatorSetId The operator set the operator joined
-    event OperatorRegistered(address indexed operator, uint32 operatorSetId);
-
-    /// @notice Emitted when AllocationManager removes an operator from this AVS's operator set
-    /// @param operator Address of the deregistered operator
-    /// @param operatorSetId The operator set the operator left
-    event OperatorDeregistered(address indexed operator, uint32 operatorSetId);
+    /// @notice Emitted when the ServiceManager receives an operator fee forwarded by the Settler
+    /// @param asset The token received (currency0 of the settled pool)
+    /// @param amount Fee amount received
+    event OperatorFeeReceived(address indexed asset, uint256 amount);
 
     /* ───────────────────────── EigenAuctionHook Events  ───────────────────────── */
+
+    /// @notice Emitted when the settler address is registered on the hook
+    /// @param settler The settler contract address
+    event SettlerSet(address indexed settler);
 
     /// @notice Emitted when a winning arb swap settles and the operator's reward is folded into LP rewards
     /// @param poolId ID of the pool
@@ -145,24 +113,51 @@ library EventsLib {
     /// @param operator AVS winner that executed the settlement
     event BlockSettled(PoolId indexed poolId, uint256 indexed blockNumber, address indexed operator);
 
-    /* ───────────────────────── EigenAuctionHook Events — venue lock ───────────────────────── */
-
-    /// @notice Emitted when the settler address is registered on the hook
-    /// @param settler The settler contract address
-    event SettlerSet(address indexed settler);
+    /// @notice Emitted when governance changes the operator fee rate on the Settler
+    /// @param newOperatorFeeBps New fee in basis points
+    event OperatorFeeBpsSet(uint256 newOperatorFeeBps);
 
     /* ───────────────────────── EigenAuctionTaskManager Events ───────────────────────── */
 
     /// @notice Emitted once a quorum-attested searcher winner is recorded for a (pool, block).
     /// @param poolId Pool ID the winner is committed for
-    /// @param targetBlock Block for which the winner is commited
+    /// @param targetBlock Block for which the winner is committed
     /// @param executor Address of the operator who was selected to send a batch tx
     /// @param resultHash `keccak256(arbOrderHash, clearingPriceX128, intentsRoot)` the executor must
     /// reproduce at settle time
     event WinnerCommitted(
-        PoolId indexed poolId, 
-        uint256 indexed targetBlock, 
-        address indexed executor, 
+        PoolId indexed poolId,
+        uint256 indexed targetBlock,
+        address indexed executor,
         bytes32 resultHash
     );
+
+    /// @notice Emitted when a commitment is proven fraudulent by a strictly-better arb order.
+    /// @param poolId Pool the disputed commitment belongs to
+    /// @param targetBlock Block the disputed commitment targeted
+    /// @param challenger Address that submitted the fraud proof
+    event CommitmentChallenged(
+        PoolId indexed poolId,
+        uint256 indexed targetBlock,
+        address indexed challenger
+    );
+
+    /// @notice Emitted once per fraudulent commitment after its signing operators are queued for slashing.
+    /// @param poolId Pool the fraudulent commitment belongs to
+    /// @param targetBlock Block the fraudulent commitment targeted
+    /// @param signerCount Number of signing operators queued for slashing (executor excluded)
+    event SignatorySlashingQueued(
+        PoolId indexed poolId,
+        uint256 indexed targetBlock,
+        uint256 signerCount
+    );
+
+    /// @notice Emitted for each signing operator queued in the VetoableSlasher.
+    /// @param operator The operator whose slashing was queued
+    event OperatorSlashQueued(address indexed operator);
+
+    /// @notice Emitted when the slashing config (strategies + per-strategy wad) is updated.
+    /// @param strategyCount Number of strategies that will be slashed on a fault
+    /// @param wadToSlash Fraction of each strategy's allocation slashed, in wad (1e18 = 100%)
+    event SlashingConfigSet(uint256 strategyCount, uint256 wadToSlash);
 }
