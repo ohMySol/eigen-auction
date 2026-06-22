@@ -7,10 +7,10 @@ import {OperatorSet} from "eigenlayer-contracts/src/contracts/libraries/Operator
 /// @title MockAllocationManager
 /// @author ohMySol
 /// @notice Minimal in for EigenLayer's `AllocationManager`, implementing only the three
-/// methods `AuctionServiceManager` actually calls: `isMemberOfOperatorSet`, `createOperatorSets`,
+/// methods `EigenAuctionServiceManager` actually calls: `isMemberOfOperatorSet`, `createOperatorSets`,
 /// and `slashOperator`. Membership is set manually via `setMember`; slash calls are recorded so
 /// tests can assert which operators were slashed. Test-only — never deploy to production.
-/// @dev `AuctionServiceManager` holds this behind an `IAllocationManager` cast; only the
+/// @dev `EigenAuctionServiceManager` holds this behind an `IAllocationManager` cast; only the
 /// implemented selectors are ever invoked, so the unimplemented interface surface is irrelevant.
 contract MockAllocationManager {
     /* MEMBERSHIP */

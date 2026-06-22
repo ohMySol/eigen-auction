@@ -18,8 +18,30 @@ contract MockTaskManager is ICommitmentReader {
 
     /// @notice Records a commitment for `(poolId, targetBlock)` so the Settler's gate can read it.
     function setCommitment(PoolId poolId, uint256 targetBlock, bytes32 resultHash, address executor) external {
-        _commitments[poolId][targetBlock] =
-            Commitment({resultHash: resultHash, signatoryRecordHash: bytes32(0), executor: executor, exists: true});
+        _commitments[poolId][targetBlock] = Commitment({
+            resultHash: resultHash,
+            hashOfNonSigners: bytes32(0),
+            executor: executor,
+            exists: true,
+            challenged: false
+        });
+    }
+
+    /// @notice Records a challenged commitment carrying a `hashOfNonSigners`, for slasher tests that
+    /// reconstruct the signer set from it.
+    function setChallengedCommitment(
+        PoolId poolId,
+        uint256 targetBlock,
+        bytes32 hashOfNonSigners,
+        address executor
+    ) external {
+        _commitments[poolId][targetBlock] = Commitment({
+            resultHash: bytes32(0),
+            hashOfNonSigners: hashOfNonSigners,
+            executor: executor,
+            exists: true,
+            challenged: true
+        });
     }
 
     /// @inheritdoc ICommitmentReader
