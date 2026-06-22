@@ -6,10 +6,9 @@ import {ERC1967Proxy} from "openzeppelin-contracts/contracts/proxy/ERC1967/ERC19
 
 import {IAVSDirectory} from "eigenlayer-contracts/src/contracts/interfaces/IAVSDirectory.sol";
 import {IRewardsCoordinator} from "eigenlayer-contracts/src/contracts/interfaces/IRewardsCoordinator.sol";
-import {IAllocationManager, IAllocationManagerTypes} from "eigenlayer-contracts/src/contracts/interfaces/IAllocationManager.sol";
+import {IAllocationManager} from "eigenlayer-contracts/src/contracts/interfaces/IAllocationManager.sol";
 import {IDelegationManager} from "eigenlayer-contracts/src/contracts/interfaces/IDelegationManager.sol";
 import {IPermissionController} from "eigenlayer-contracts/src/contracts/interfaces/IPermissionController.sol";
-import {IStrategy} from "eigenlayer-contracts/src/contracts/interfaces/IStrategy.sol";
 import {ISlashingRegistryCoordinator} from "eigenlayer-middleware/src/interfaces/ISlashingRegistryCoordinator.sol";
 import {IStakeRegistry} from "eigenlayer-middleware/src/interfaces/IStakeRegistry.sol";
 
@@ -21,11 +20,18 @@ import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {HookMiner} from "v4-hooks-public/src/utils/HookMiner.sol";
 
-import {AuctionServiceManager} from "../../src/AuctionServiceManager.sol";
+import {IStrategy} from "eigenlayer-contracts/src/contracts/interfaces/IStrategy.sol";
+import {IStrategyManager} from "eigenlayer-contracts/src/contracts/interfaces/IStrategyManager.sol";
+
+import {EigenAuctionServiceManager} from "../../src/EigenAuctionServiceManager.sol";
 import {EigenAuctionHook} from "../../src/EigenAuctionHook.sol";
 import {Settler} from "../../src/Settler.sol";
+import {EigenAuctionTaskManager} from "../../src/EigenAuctionTaskManager.sol";
+import {VetoableSlasher} from "eigenlayer-middleware/src/slashers/VetoableSlasher.sol";
+import {IVetoableSlasher} from "eigenlayer-middleware/src/interfaces/IVetoableSlasher.sol";
 import {ConstantsLib} from "../../src/libraries/ConstantsLib.sol";
 import {ConfigLib, NetworkConfig, Deployment} from "../libs/ConfigLib.sol";
+import {DeployMiddleware} from "./DeployMiddleware.sol";
 
 /// @title DeployCore
 /// @author ohMySol
@@ -36,14 +42,17 @@ import {ConfigLib, NetworkConfig, Deployment} from "../libs/ConfigLib.sol";
 ///
 /// Broadcast scoping is the caller's responsibility: wrap `_deployProtocol`/pool-init in the deployer's
 /// `vm.startBroadcast(deployerPk)` and `_registerOperator` in the operator's broadcast.
-abstract contract DeployCore is Script {
+abstract contract DeployCore is DeployMiddleware {
     using PoolIdLibrary for PoolKey;
 
-    /// @notice The three protocol contracts produced by a deployment.
+    /// @notice The protocol + middleware contracts produced by a deployment.
     struct ProtocolContracts {
-        AuctionServiceManager avs;
+        EigenAuctionServiceManager avs;
         EigenAuctionHook hook;
         Settler settler;
+        EigenAuctionTaskManager taskManager;
+        VetoableSlasher vetoableSlasher;
+        ISlashingRegistryCoordinator registryCoordinator;
     }
 
     /// @dev Hook permission flags this hook encodes in its address.
@@ -53,19 +62,58 @@ abstract contract DeployCore is Script {
         Hooks.AFTER_ADD_LIQUIDITY_FLAG |
         Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
     );
-    
-    /// @dev Deploys the three contracts (AVS proxy, mined-address hook, Settler) and wires them: points
-    /// the hook at the Settler, registers AVS metadata, and creates the slashable operator set. Must run
-    /// inside the deployer's broadcast (the deployer becomes the AVS + hook owner).
+
+    /// @dev Deploys the full stack — BLS middleware (coordinator + registries), AVS proxy, mined-address
+    /// hook, Settler, TaskManager, and the VetoableSlasher/EigenAuctionSlasher pair — and wires them:
+    /// the coordinator becomes the AVS registrar, the single slashable quorum is created, and the hook,
+    /// AVS, and TaskManager are all pointed at the Settler. Must run inside the deployer's broadcast; the
+    /// deployer becomes the AVS/hook/coordinator owner and the slasher's veto committee.
     function _deployProtocol(NetworkConfig memory config, address owner) internal returns (ProtocolContracts memory protocol) {
-        protocol.avs = _deployAvs(config, owner);
+        // 1. BLS middleware stack (coordinator proxy live but not yet initialized).
+        RegistryStack memory rs = _deployRegistryStack(config, owner);
+        protocol.registryCoordinator = ISlashingRegistryCoordinator(address(rs.coordinator));
+
+        // 2. AVS wired to the coordinator + stake registry; coordinator init needs the AVS address.
+        protocol.avs = _deployAvs(config, owner, address(rs.coordinator), address(rs.stakeRegistry));
+        _initRegistryCoordinator(rs, owner, address(protocol.avs));
+
+        // 3. Hook (mined CREATE2 address), TaskManager, and the Settler the three contracts gate on.
         protocol.hook = _deployHook(config.poolManager, address(protocol.avs), owner);
-        protocol.settler = new Settler(config.poolManager, address(protocol.avs));
+        protocol.taskManager = _deployTaskManager(
+            rs,
+            config.threshold,
+            uint8(ConstantsLib.OPERATOR_SET_ID),
+            ConstantsLib.OPERATOR_SET_ID
+        );
+        protocol.settler = new Settler(
+            config.poolManager,
+            address(protocol.avs),
+            address(protocol.taskManager),
+            owner,
+            ConstantsLib.DEFAULT_OPERATOR_FEE_BPS
+        );
         protocol.hook.setSettler(address(protocol.settler));
         protocol.avs.setSettler(address(protocol.settler));
-        // AllocationManager requires AVS metadata to exist before an operator set can be created.
+        protocol.taskManager.setSettler(address(protocol.settler));
+
+        // 4. Slashing config on TaskManager + VetoableSlasher whose authorizedSlasher is TaskManager.
+        IStrategy[] memory strategies = new IStrategy[](1);
+        strategies[0] = IStrategy(config.stakeStrategy);
+        protocol.taskManager.setSlashingConfig(strategies, SLASH_WAD);
+
+        protocol.vetoableSlasher = new VetoableSlasher(
+            IAllocationManager(config.allocationManager),
+            IStrategyManager(config.strategyManager),
+            ISlashingRegistryCoordinator(address(rs.coordinator)),
+            address(protocol.taskManager),
+            owner,
+            VETO_WINDOW_BLOCKS
+        );
+        protocol.taskManager.setVetoableSlasher(IVetoableSlasher(address(protocol.vetoableSlasher)));
+
+        // 5. AVS identity + operator set: metadata, coordinator-as-registrar, slashable quorum 0.
         protocol.avs.registerAvsMetadata("https://eigen-auction.local/avs.json");
-        _createOperatorSet(protocol.avs, config.stakeStrategy);
+        _configureOperatorSet(config, rs, protocol.avs, protocol.vetoableSlasher, owner);
     }
 
     /// @dev Assembles the PoolKey from config + a resolved token pair and the deployed hook.
@@ -84,25 +132,19 @@ abstract contract DeployCore is Script {
         });
     }
 
-    /// @dev Registers `operator` as an EigenLayer operator and into this AVS's operator set — the
-    /// membership `commitWinner` checks. Must run inside the operator's broadcast.
-    /// On a mainnet fork the operator may already be registered (mainnet state is preserved); the
-    /// `isOperator` guard skips re-registration so the script doesn't revert with ActivelyDelegated.
-    function _registerOperator(NetworkConfig memory config, address avs, address operator) internal {
+    /// @dev Ensures `operator` is a registered EigenLayer operator (the prerequisite for joining the
+    /// AVS). Must run inside the operator's broadcast. On a mainnet fork the operator may already be
+    /// registered (mainnet state is preserved); the guard skips re-registration so the script doesn't
+    /// revert with `ActivelyDelegated`.
+    ///
+    /// Operator-set membership in the BLS model is a `SlashingRegistryCoordinator` registration carrying
+    /// the operator's BLS pubkey-registration params and signature, which are generated and submitted
+    /// off-chain by the operator client (see the M6 off-chain components). It is intentionally not done
+    /// here, where those params are unavailable.
+    function _registerOperator(NetworkConfig memory config, address operator) internal {
         if (!IDelegationManager(config.delegationManager).isOperator(operator)) {
             IDelegationManager(config.delegationManager).registerAsOperator(address(0), 0, "");
         }
-        uint32[] memory setIds = new uint32[](1);
-        setIds[0] = ConstantsLib.OPERATOR_SET_ID;
-        
-        IAllocationManager(config.allocationManager).registerForOperatorSets(
-            operator,
-            IAllocationManagerTypes.RegisterParams({
-                avs: avs, 
-                operatorSetIds: setIds, 
-                data: ""
-            })
-        );
     }
 
     /// @dev Writes deployments/<chainId>.json — the single artifact the backend/frontend read — and logs
@@ -134,25 +176,32 @@ abstract contract DeployCore is Script {
 
         console2.log("currency0: ", Currency.unwrap(key.currency0));
         console2.log("currency1: ", Currency.unwrap(key.currency1));
-        console2.log("AuctionServiceManager: ", address(protocol.avs));
+        console2.log("EigenAuctionServiceManager: ", address(protocol.avs));
         console2.log("EigenAuctionHook: ", address(protocol.hook));
         console2.log("Settler: ", address(protocol.settler));
+        console2.log("EigenAuctionTaskManager: ", address(protocol.taskManager));
+        console2.log("SlashingRegistryCoordinator: ", address(protocol.registryCoordinator));
+        console2.log("VetoableSlasher: ", address(protocol.vetoableSlasher));
     }
 
     /* INTERNAL BUILDING BLOCKS */
 
-    /// @dev Deploy the AVS implementation wired to the live EL core, behind an initialised proxy.
-    function _deployAvs(NetworkConfig memory config, address owner) internal returns (AuctionServiceManager avs) {
-        AuctionServiceManager impl = new AuctionServiceManager(
+    /// @dev Deploy the AVS implementation wired to the live EL core and this AVS's BLS registry stack,
+    /// behind an initialised proxy.
+    function _deployAvs(NetworkConfig memory config, address owner, address registryCoordinator, address stakeRegistry)
+        internal
+        returns (EigenAuctionServiceManager avs)
+    {
+        EigenAuctionServiceManager impl = new EigenAuctionServiceManager(
             IAVSDirectory(config.avsDirectory),
             IRewardsCoordinator(config.rewardsCoordinator),
-            ISlashingRegistryCoordinator(address(0)),
-            IStakeRegistry(address(0)),
+            ISlashingRegistryCoordinator(registryCoordinator),
+            IStakeRegistry(stakeRegistry),
             IPermissionController(config.permissionController),
             IAllocationManager(config.allocationManager)
         );
-        bytes memory initData = abi.encodeCall(AuctionServiceManager.initialize, (owner, owner));
-        avs = AuctionServiceManager(address(new ERC1967Proxy(address(impl), initData)));
+        bytes memory initData = abi.encodeCall(EigenAuctionServiceManager.initialize, (owner, owner));
+        avs = EigenAuctionServiceManager(address(new ERC1967Proxy(address(impl), initData)));
     }
 
     /// @dev Mine a hook address carrying the required permission flags, then deploy via CREATE2.
@@ -166,14 +215,7 @@ abstract contract DeployCore is Script {
         );
 
         hook = new EigenAuctionHook{salt: salt}(poolManager, avs, owner);
-        
-        require(address(hook) == hookAddr, "DeployCore: hook address mismatch");
-    }
 
-    /// @dev Create the AVS's operator set, slashable against the configured stake strategy.
-    function _createOperatorSet(AuctionServiceManager avs, address stakeStrategy) internal {
-        IStrategy[] memory strategies = new IStrategy[](1);
-        strategies[0] = IStrategy(stakeStrategy);
-        avs.createOperatorSet(strategies);
+        require(address(hook) == hookAddr, "DeployCore: hook address mismatch");
     }
 }

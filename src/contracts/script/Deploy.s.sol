@@ -53,9 +53,10 @@ contract Deploy is DeployCore {
         IPoolManager(config.poolManager).initialize(key, startSqrtPriceX96);
         vm.stopBroadcast();
 
-        // Step 2 — register the operator into the AVS operator set.
+        // Step 2 — ensure the demo operator is a registered EigenLayer operator. BLS operator-set
+        // membership is submitted off-chain by the operator client (see M6).
         vm.startBroadcast(operatorPk);
-        _registerOperator(config, address(protocol.avs), operator);
+        _registerOperator(config, operator);
         vm.stopBroadcast();
 
         // Step 3 — persist the artifact the backend/frontend read.
