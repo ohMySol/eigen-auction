@@ -22,3 +22,6 @@ src/frontend/dist/
 /deployments/*.json
 
 src/test/fixtures
+
+# Git worktrees
+.worktrees/
