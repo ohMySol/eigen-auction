@@ -22,8 +22,8 @@ import {ISettler} from "./interfaces/ISettler.sol";
 import {IEigenAuctionServiceManager} from "./interfaces/IEigenAuctionServiceManager.sol";
 import {ICommitmentReader} from "./interfaces/ICommitmentReader.sol";
 import {Commitment} from "./types/Commitment.sol";
-import {SwapIntent, INTENT_TYPEHASH} from "./types/SwapIntent.sol";
-import {ToBOrder, toBStructHash} from "./types/ToBOrder.sol";
+import {SwapIntent} from "./types/SwapIntent.sol";
+import {ToBOrder} from "./types/ToBOrder.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {EventsLib} from "./libraries/EventsLib.sol";
 import {ConstantsLib} from "./libraries/ConstantsLib.sol";
@@ -421,12 +421,12 @@ contract Settler is ISettler, IUnlockCallback, Ownable {
         returns (bytes32)
     {
         bool hasArb = arb.quantityIn != 0 || arb.quantityOut != 0;
-        bytes32 arbOrderHash = hasArb ? toBStructHash(arb) : bytes32(0);
+        bytes32 arbOrderHash = hasArb ? arb.toBStructHash() : bytes32(0);
 
         uint256 n = intents.length;
         bytes32[] memory hashes = new bytes32[](n);
         for (uint256 i; i < n; ++i) {
-            hashes[i] = _intentStructHash(intents[i]);
+            hashes[i] = intents[i].intentStructHash();
         }
         bytes32 intentsRoot = keccak256(abi.encode(hashes));
 
@@ -500,7 +500,7 @@ contract Settler is ISettler, IUnlockCallback, Ownable {
     }
 
     function _verifyIntent(SwapIntent memory intent) private view {
-        bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN_SEPARATOR, _intentStructHash(intent)));
+        bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN_SEPARATOR, intent.intentStructHash()));
         (address signer, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, intent.signature);
 
         if (err != ECDSA.RecoverError.NoError || signer != intent.user) revert ErrorsLib.Settler_InvalidSignature();
@@ -510,26 +510,9 @@ contract Settler is ISettler, IUnlockCallback, Ownable {
         if (arb.poolId != PoolId.unwrap(key.toId())) revert ErrorsLib.Settler_WrongPool();
         if (arb.validForBlock != block.number) revert ErrorsLib.Settler_WrongBlock();
 
-        bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN_SEPARATOR, toBStructHash(arb)));
+        bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN_SEPARATOR, arb.toBStructHash()));
         (address signer, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, arb.signature);
 
         if (err != ECDSA.RecoverError.NoError || signer != arb.searcher) revert ErrorsLib.Settler_InvalidArbSignature();
-    }
-
-    /// @dev EIP-712 struct hash of an intent's terms (signature excluded).
-    function _intentStructHash(SwapIntent memory intent) private pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                INTENT_TYPEHASH,
-                intent.user,
-                intent.poolId,
-                intent.zeroForOne,
-                intent.useInternal,
-                intent.amountIn,
-                intent.minAmountOut,
-                intent.nonce,
-                intent.deadline
-            )
-        );
     }
 }

@@ -9,7 +9,7 @@ pragma solidity ^0.8.0;
 /// executor must reproduce at settle time (see `ISettler.computeResultHash`).
 /// @param hashOfNonSigners Identifies the hash of operators pub keys that didn't sign; consumed by the fraud-proof slash.
 /// @param executor The off-chain selected operator allowed to call `settle` for this commitment.
-/// @param exists Whether a commitment was recorded (zero-struct guard).
+/// @param exists Whether a commitment was recorded.
 /// @param challenged Whether a fraud proof has succeeded against this commitment.
 struct Commitment {
     bytes32 resultHash;

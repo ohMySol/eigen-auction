@@ -107,7 +107,10 @@ contract EigenAuctionServiceManager is ServiceManagerBase, IEigenAuctionServiceM
     ) external onlyRewardsInitiator {
         _approveSubmissions(submissions);
         _rewardsCoordinator.createOperatorDirectedOperatorSetRewardsSubmission(
-            OperatorSet({avs: address(this), id: ConstantsLib.OPERATOR_SET_ID}),
+            OperatorSet({
+                avs: address(this), 
+                id: ConstantsLib.OPERATOR_SET_ID
+            }),
             submissions
         );
     }

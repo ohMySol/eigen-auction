@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+using SwapIntentLib for SwapIntent global;
+
 // Intent typehash for users signature verification
 bytes32 constant INTENT_TYPEHASH = keccak256(
     "SwapIntent(address user,bytes32 poolId,bool zeroForOne,bool useInternal,"
@@ -35,4 +37,28 @@ struct SwapIntent {
     uint64 nonce;
     uint64 deadline;
     bytes signature;
+}
+
+/// @title SwapIntentLib
+/// @notice This library allows to derive the hash of the `SwapInten` struct
+library SwapIntentLib {
+    /// @dev Reruturns EIP-712 struct hash of an intent's terms. Signature excluded, because 
+    /// EIP-712 defines the struct hash as a hash of the typed data. The signature is the proof, 
+    /// not part of the message being proved. It lives alongside the struct in calldata but is never hashed into it.
+    /// @param intent User swap intent
+    function intentStructHash(SwapIntent memory intent) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                INTENT_TYPEHASH,
+                intent.user,
+                intent.poolId,
+                intent.zeroForOne,
+                intent.useInternal,
+                intent.amountIn,
+                intent.minAmountOut,
+                intent.nonce,
+                intent.deadline
+            )
+        );
+    }
 }

@@ -5,7 +5,7 @@ import {PoolRewardsLib} from "../libraries/PoolRewardsLib.sol";
 
 using PoolRewardsLib for PoolRewards global;
 
-/// @notice Per-pool reward accumulator, modelled on Uniswap V3's fee-growth bookkeeping. Rewards are
+/// @notice Per-pool reward accumulator, created based on Uniswap V3's fee-growth bookkeeping. Rewards are
 /// always denominated in currency0. A position's earned reward is the growth that accrued "inside" its
 /// range since it last checkpointed, multiplied by its liquidity.
 /// @param growthGlobalX128 Pool-wide cumulative reward growth per unit of liquidity, X128 fixed point.

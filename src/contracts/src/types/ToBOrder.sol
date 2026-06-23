@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+using ToBOrderLib for ToBOrder global;
+
 // EIP-712 typehash for arbitrageur top-of-block order signature verification.
 bytes32 constant TOB_ORDER_TYPEHASH = keccak256(
     "ToBOrder(address searcher,bytes32 poolId,bool zeroForOne,bool useInternal,"
@@ -37,19 +39,23 @@ struct ToBOrder {
     bytes signature;
 }
 
-/// @notice EIP-712 struct hash of a `ToBOrder`'s terms (signature excluded). Shared by the
-/// Settler (result-hash + signature checks) and the TaskManager (challenge) so both use one encoding.
-function toBStructHash(ToBOrder memory order) pure returns (bytes32) {
-    return keccak256(
-        abi.encode(
-            TOB_ORDER_TYPEHASH,
-            order.searcher,
-            order.poolId,
-            order.zeroForOne,
-            order.useInternal,
-            order.quantityIn,
-            order.quantityOut,
-            order.validForBlock
-        )
-    );
+/// @title ToBOrderLib
+/// @dev This library allows to derive the hash of the `ToBOrder` struct
+library ToBOrderLib {
+    /// @notice EIP-712 struct hash of a `ToBOrder`'s terms (signature excluded). Shared by the
+    /// Settler (result-hash + signature checks) and the TaskManager (challenge) so both use one encoding.
+    function toBStructHash(ToBOrder memory order) internal pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                TOB_ORDER_TYPEHASH,
+                order.searcher,
+                order.poolId,
+                order.zeroForOne,
+                order.useInternal,
+                order.quantityIn,
+                order.quantityOut,
+                order.validForBlock
+            )
+        );
+    }
 }

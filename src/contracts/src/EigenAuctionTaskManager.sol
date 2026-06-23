@@ -13,7 +13,7 @@ import {PoolId} from "v4-core/types/PoolId.sol";
 import {IEigenAuctionTaskManager} from "./interfaces/IEigenAuctionTaskManager.sol";
 import {ICommitmentReader} from "./interfaces/ICommitmentReader.sol";
 import {Commitment} from "./types/Commitment.sol";
-import {ToBOrder, toBStructHash} from "./types/ToBOrder.sol";
+import {ToBOrder} from "./types/ToBOrder.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {EventsLib} from "./libraries/EventsLib.sol";
 import {ConstantsLib} from "./libraries/ConstantsLib.sol";
@@ -248,7 +248,7 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
         bytes32 committedResultHash
     ) private view {
         // Prove committedArb is the order the quorum actually attested.
-        bytes32 resultHash = keccak256(abi.encode(toBStructHash(committedArb), clearingPriceX128, intentsRoot));
+        bytes32 resultHash = keccak256(abi.encode(committedArb.toBStructHash(), clearingPriceX128, intentsRoot));
         if (resultHash != committedResultHash) revert ErrorsLib.EigenAuctionTaskManager_ResultMismatch();
 
         // The dominant order must dispute the same pool/block/direction.
@@ -266,7 +266,7 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
 
         // The order must be a genuine searcher commitment under the Settler's EIP-712 domain.
         bytes32 digest = keccak256(
-            abi.encodePacked(hex"1901", ISettlerDomain(settler).DOMAIN_SEPARATOR(), toBStructHash(dominantOrder))
+            abi.encodePacked(hex"1901", ISettlerDomain(settler).DOMAIN_SEPARATOR(), dominantOrder.toBStructHash())
         );
         (address recovered, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, dominantOrder.signature);
 

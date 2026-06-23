@@ -8,7 +8,7 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {IERC20Minimal} from "v4-core/interfaces/external/IERC20Minimal.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
-import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
+import {Currency} from "v4-core/types/Currency.sol";
 import {SwapParams, ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
@@ -18,7 +18,6 @@ import {IEigenAuctionHook} from "./interfaces/IEigenAuctionHook.sol";
 import {IEigenAuctionServiceManager} from "./interfaces/IEigenAuctionServiceManager.sol";
 import {Position, LiquidityCallback} from "./types/Position.sol";
 import {PoolRewards} from "./types/PoolRewards.sol";
-import {PoolRewardsLib} from "./libraries/PoolRewardsLib.sol";
 import {RewardGrowthLib} from "./libraries/RewardGrowthLib.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
 import {EventsLib} from "./libraries/EventsLib.sol";
@@ -50,8 +49,6 @@ import {ConstantsLib} from "./libraries/ConstantsLib.sol";
 contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
-    using CurrencyLibrary for Currency;
-    using PoolRewardsLib for PoolRewards;
 
     /* IMMUTABLES */
 
