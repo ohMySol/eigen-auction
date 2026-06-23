@@ -40,12 +40,13 @@ struct SwapIntent {
 }
 
 /// @title SwapIntentLib
-/// @notice This library allows to derive the hash of the `SwapInten` struct
+/// @author ohMySol
+/// @dev Encoding helpers for `SwapIntent`.
 library SwapIntentLib {
-    /// @dev Reruturns EIP-712 struct hash of an intent's terms. Signature excluded, because 
-    /// EIP-712 defines the struct hash as a hash of the typed data. The signature is the proof, 
-    /// not part of the message being proved. It lives alongside the struct in calldata but is never hashed into it.
-    /// @param intent User swap intent
+    /// @notice Returns the EIP-712 struct hash of the intent's terms. The signature field is
+    /// excluded — it is the proof over those terms, not part of the message being proved.
+    /// @param intent The swap intent to hash.
+    /// @return The EIP-712 struct hash, safe to use in an EIP-191 digest.
     function intentStructHash(SwapIntent memory intent) internal pure returns (bytes32) {
         return keccak256(
             abi.encode(

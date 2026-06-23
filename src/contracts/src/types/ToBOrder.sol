@@ -40,10 +40,14 @@ struct ToBOrder {
 }
 
 /// @title ToBOrderLib
-/// @dev This library allows to derive the hash of the `ToBOrder` struct
+/// @author ohMySol
+/// @dev Encoding helpers for `ToBOrder`. Used by both the Settler (signature / result-hash checks) and the
+/// TaskManager (challenge fraud proof), so there is a single canonical encoding across the system.
 library ToBOrderLib {
-    /// @notice EIP-712 struct hash of a `ToBOrder`'s terms (signature excluded). Shared by the
-    /// Settler (result-hash + signature checks) and the TaskManager (challenge) so both use one encoding.
+    /// @notice Returns the EIP-712 struct hash of the order's terms. The signature field is
+    /// excluded because it is the proof over those terms, not part of the message being proved.
+    /// @param order The arb order to hash.
+    /// @return The EIP-712 struct hash, safe to use in an EIP-191 digest.
     function toBStructHash(ToBOrder memory order) internal pure returns (bytes32) {
         return keccak256(
             abi.encode(
