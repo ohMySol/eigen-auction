@@ -4,8 +4,10 @@ pragma solidity ^0.8.0;
 import {BaseHook} from "v4-hooks-public/src/base/BaseHook.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
-import {IERC20Minimal} from "v4-core/interfaces/external/IERC20Minimal.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {Currency} from "v4-core/types/Currency.sol";
@@ -16,7 +18,7 @@ import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 
 import {IEigenAuctionHook} from "./interfaces/IEigenAuctionHook.sol";
 import {IEigenAuctionServiceManager} from "./interfaces/IEigenAuctionServiceManager.sol";
-import {Position, LiquidityCallback} from "./types/Position.sol";
+import {Position, LiquidityCallback, PositionLib} from "./types/Position.sol";
 import {PoolRewards} from "./types/PoolRewards.sol";
 import {RewardGrowthLib} from "./libraries/RewardGrowthLib.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
@@ -49,6 +51,7 @@ import {ConstantsLib} from "./libraries/ConstantsLib.sol";
 contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
+    using SafeERC20 for IERC20;
 
     /* IMMUTABLES */
 
@@ -72,6 +75,9 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     mapping(PoolId => PoolRewards) private _poolRewards;
 
     /// @dev positionKey => position. Keyed by `keccak256(poolId, owner, lower, upper, salt)`.
+    /// Tracks how much reward each position has earned over time without paying it out.
+    /// When rewards come in, a global counter grows. Each position checkpoints that counter
+    /// so we can later compute exactly what it earned between its last action and now.
     mapping(bytes32 => Position) private _positions;
 
     /* CONSTRUCTOR */
@@ -178,10 +184,11 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     /// @notice Pool-manager unlock callback for the hook's own LP add/remove flow.
     /// @dev V4 skips a hook's own liquidity callbacks on self-calls, so the reward ledger is updated
     /// inline here, keyed to the real LP rather than the router.
+    /// @param data ABI-encoded `LiquidityCallback` passed through from `addLiquidity`/`removeLiquidity`.
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
         LiquidityCallback memory cbData = abi.decode(data, (LiquidityCallback));
         PoolId poolId = cbData.key.toId();
-        bytes32 positionKey = _positionKey(
+        bytes32 positionKey = PositionLib.positionKey(
             poolId, 
             cbData.lp, 
             cbData.tickLower, 
@@ -197,8 +204,10 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
             _poolRewards[poolId].initializeBoundary(poolManager, poolId, cbData.tickUpper, currentTick);
         }
 
+        uint256 insideX128 = _poolRewards[poolId].getGrowthInside(currentTick, cbData.tickLower, cbData.tickUpper);
+
         // Accrue rewards earned so far and re-checkpoint before the liquidity change.
-        _settlePosition(poolId, positionKey, currentTick, cbData.tickLower, cbData.tickUpper);
+        _positions[positionKey].settlePosition(insideX128);
 
         (BalanceDelta delta,) = poolManager.modifyLiquidity(
             cbData.key,
@@ -211,7 +220,7 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
             ""
         );
 
-        _applyLiquidity(positionKey, cbData.liquidityDelta);
+        _positions[positionKey].applyLiquidity(cbData.liquidityDelta);
 
         // Auto-pay accrued rewards on removal so the LP never needs a separate claim step.
         if (cbData.liquidityDelta < 0) {
@@ -227,9 +236,18 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     function claimRewards(PoolKey calldata key, int24 tickLower, int24 tickUpper) external {
         PoolId poolId = key.toId();
         (, int24 currentTick,,) = poolManager.getSlot0(poolId);
-        bytes32 positionKey = _positionKey(poolId, msg.sender, tickLower, tickUpper, bytes32(0));
+        bytes32 positionKey = PositionLib.positionKey(
+            poolId, 
+            msg.sender, 
+            tickLower, 
+            tickUpper, 
+            bytes32(0)
+        );
         
-        _settlePosition(poolId, positionKey, currentTick, tickLower, tickUpper);
+        uint256 insideX128 = _poolRewards[poolId].getGrowthInside(currentTick, tickLower, tickUpper);
+        
+        _positions[positionKey].settlePosition(insideX128);
+        
         _payRewards(poolId, positionKey, key.currency0, msg.sender);
     }
 
@@ -249,7 +267,9 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
         bytes32 salt
     ) external view returns (uint256 amount) {
         PoolId poolId = key.toId();
-        Position storage pos = _positions[_positionKey(poolId, owner_, tickLower, tickUpper, salt)];
+        bytes32 positionKey = PositionLib.positionKey(key.toId(), owner_, tickLower, tickUpper, salt);
+        
+        Position storage pos = _positions[positionKey];
         (, int24 currentTick,,) = poolManager.getSlot0(poolId);
         
         uint256 insideX128 = _poolRewards[poolId].getGrowthInside(currentTick, tickLower, tickUpper);
@@ -265,7 +285,8 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
         int24 tickUpper,
         bytes32 salt
     ) external view override returns (uint128) {
-        return _positions[_positionKey(key.toId(), owner_, tickLower, tickUpper, salt)].liquidity;
+        bytes32 positionKey = PositionLib.positionKey(key.toId(), owner_, tickLower, tickUpper, salt);
+        return _positions[positionKey].liquidity;
     }
 
     /* SWAP HOOKS */
@@ -274,6 +295,10 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     /// Allows Settler swaps always; allows public swaps only before a settler is set or after the
     /// fallback period elapses. For Settler swaps, `hookData` may carry a 32-byte `expectedLiquidity`
     /// snapshotted by the operator; if it differs from the live value a JIT add slipped in → revert.
+    /// @param sender The swap initiator — the Settler when the venue is locked, anyone otherwise.
+    /// @param key The pool being swapped.
+    /// @param hookData Optional 32-byte `expectedLiquidity` snapshot for the JIT guard; ignored when
+    /// the caller is not the Settler or the bytes are not exactly 32.
     function _beforeSwap(
         address sender,
         PoolKey calldata key,
@@ -303,6 +328,7 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
 
     /// @dev Flips outside accumulators for the ticks this swap crossed. Reward folding happens
     /// separately via `distributeReward` once the Settler knows the bid/residual amount.
+    /// @param key The pool that was swapped.
     function _afterSwap(
         address,
         PoolKey calldata key,
@@ -319,66 +345,30 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     /* INTERNAL HELPERS */
 
     /// @dev Settles a position's principal token deltas against the pool manager during an LP action.
+    /// @param currency The token to settle.
+    /// @param amount Signed delta from `modifyLiquidity`; negative means the LP owes tokens in,
+    /// positive means the hook owes tokens out to the LP.
+    /// @param lp The liquidity provider tokens are pulled from or sent to.
     function _settlePrincipal(Currency currency, int128 amount, address lp) private {
         if (amount < 0) {
             poolManager.sync(currency);
-            IERC20Minimal(Currency.unwrap(currency)).transferFrom(lp, address(poolManager), uint256(uint128(-amount)));
+            IERC20(Currency.unwrap(currency)).safeTransferFrom(lp, address(poolManager), uint256(uint128(-amount)));
             poolManager.settle();
         } else if (amount > 0) {
             poolManager.take(currency, lp, uint256(uint128(amount)));
         }
     }
 
-    /// @dev Transfers any settled-but-unpaid rewards for `positionKey` directly to `lp`. No-op when nothing owed.
+    /// @dev Transfers any settled-but-unpaid rewards for a position directly to the LP. No-op when nothing is owed.
+    /// @param poolId Pool the position belongs to (used only for the emitted event).
+    /// @param positionKey Storage key of the position whose `owed` balance is paid out.
+    /// @param currency0 The reward token (always currency0 of the pool).
+    /// @param lp Recipient of the reward transfer.
     function _payRewards(PoolId poolId, bytes32 positionKey, Currency currency0, address lp) private {
         uint256 owed = _positions[positionKey].owed;
         if (owed == 0) return;
         _positions[positionKey].owed = 0;
         currency0.transfer(lp, owed);
         emit EventsLib.RewardsClaimed(poolId, lp, owed);
-    }
-
-    /// @dev Accrues rewards for `positionKey` into `owed` and advances the growth checkpoint.
-    function _settlePosition(
-        PoolId poolId,
-        bytes32 positionKey,
-        int24 currentTick,
-        int24 tickLower,
-        int24 tickUpper
-    ) private {
-        Position storage pos = _positions[positionKey];
-        uint256 insideX128 = _poolRewards[poolId].getGrowthInside(currentTick, tickLower, tickUpper);
-        unchecked {
-            pos.owed += RewardGrowthLib.rewardsOf(insideX128, pos.lastGrowthInsideX128, pos.liquidity);
-        }
-        pos.lastGrowthInsideX128 = insideX128;
-    }
-
-    /// @dev Applies a signed liquidity delta to a position, clamping at zero on removal.
-    function _applyLiquidity(bytes32 positionKey, int256 liquidityDelta) private {
-        Position storage pos = _positions[positionKey];
-        if (liquidityDelta > 0) {
-            pos.liquidity += uint128(uint256(liquidityDelta));
-        } else if (liquidityDelta < 0) {
-            uint128 dec = uint128(uint256(-liquidityDelta));
-            pos.liquidity = pos.liquidity >= dec ? pos.liquidity - dec : 0;
-        }
-    }
-
-    /// @dev Derives the storage key for a position.
-    function _positionKey(
-        PoolId poolId,
-        address owner_,
-        int24 tickLower,
-        int24 tickUpper,
-        bytes32 salt
-    ) private pure returns (bytes32) {
-        return keccak256(abi.encodePacked(
-            PoolId.unwrap(poolId), 
-            owner_, 
-            tickLower, 
-            tickUpper, 
-            salt
-        ));
     }
 }

@@ -410,16 +410,11 @@ contract Settler is ISettler, IUnlockCallback, Ownable {
     /* RESULT HASH */
 
     /// @inheritdoc ISettler
-    /// @dev On-chain definition of the committed `resultHash`. The off-chain aggregator MUST
-    /// build the operator-signed digest the same way: resultHash = keccak256(arbOrderHash, clearingPriceX128, intentsRoot)
-    /// where `arbOrderHash` is the searcher's EIP-712 struct hash (or `bytes32(0)` for an empty arb) and
-    /// `intentsRoot = keccak256(abi.encode([intent struct hashes...]))` over the intents in order.
-    /// Hashing terms (not signatures) keeps the commitment independent of signature malleability.
-    function computeResultHash(ToBOrder calldata arb, uint256 clearingPriceX128, SwapIntent[] calldata intents)
-        public
-        pure
-        returns (bytes32)
-    {
+    function computeResultHash(
+        ToBOrder calldata arb, 
+        uint256 clearingPriceX128, 
+        SwapIntent[] calldata intents
+    ) public pure returns (bytes32) {
         bool hasArb = arb.quantityIn != 0 || arb.quantityOut != 0;
         bytes32 arbOrderHash = hasArb ? arb.toBStructHash() : bytes32(0);
 

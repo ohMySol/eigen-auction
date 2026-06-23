@@ -122,6 +122,7 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
     }
 
     /// @notice Sets the Settler whose EIP-712 domain verifies challenged order signatures.
+    /// @param newSettler Address of the deployed `Settler` contract.
     function setSettler(address newSettler) external onlyCoordinatorOwner {
         settler = newSettler;
     }
@@ -223,6 +224,10 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
     /// @dev Wrapper over the inherited `checkSignatures`. Production verifies the real
     /// aggregate signature; tests override this to return canned stake totals without standing up the
     /// registry stack. `checkSignatures` itself is `public` and not `virtual`, hence the wrapper.
+    /// @param msgHash Hash of the message the quorum must have signed.
+    /// @param referenceBlockNumber Block whose operator stake snapshot is used for verification.
+    /// @param quorums Quorum ids the signature covers.
+    /// @param params Non-signer stakes and aggregate BLS signature data for the verifier.
     function _verifyQuorum(
         bytes32 msgHash,
         uint32 referenceBlockNumber,
@@ -238,6 +243,13 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
     /// `resultHash`, and `dominantOrder` is a genuine searcher-signed order for the same pool/block/
     /// direction that strictly dominates it. Reverts otherwise. Split out of `challenge` to keep its
     /// stack shallow under the non-viaIR optimizer.
+    /// @param poolId Pool the disputed commitment belongs to.
+    /// @param targetBlock Block the disputed commitment targeted.
+    /// @param committedArb The arb order carried in the committed result.
+    /// @param clearingPriceX128 The committed clearing price, used to rebuild the result hash.
+    /// @param intentsRoot The committed intents root, used to rebuild the result hash.
+    /// @param dominantOrder The challenger's order that must strictly dominate `committedArb`.
+    /// @param committedResultHash The result hash stored in the commitment, used to verify `committedArb`.
     function _proveFraud(
         PoolId poolId,
         uint256 targetBlock,
@@ -278,6 +290,7 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
     /// @dev Reverts unless every quorum's signed stake meets the threshold. Bounded by the number of
     /// quorums (one in the default config). Rearranged to a cross-multiplication so there is no
     /// division or rounding; `uint96 * BPS` cannot overflow `uint256`.
+    /// @param totals Signed and total stake per quorum returned by the BLS signature verifier.
     function _requireThreshold(QuorumStakeTotals memory totals) private view {
         uint256 quorums = totals.signedStakeForQuorum.length;
         for (uint256 i; i < quorums; ++i) {
@@ -289,6 +302,11 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
 
     /// @dev Validates the non-signer set against the stored `hashOfNonSigners`, then reconstructs
     /// the signer set (full quorum minus non-signers minus executor) and queues one slash per signer.
+    /// @param poolId Pool the fraudulent commitment belongs to (used only for the emitted event).
+    /// @param targetBlock Block the fraudulent commitment targeted (used only for the emitted event).
+    /// @param referenceBlockNumber Block used to snapshot the operator set that signed the commitment.
+    /// @param nonSignerPubkeyHashes Sorted BLS pubkey hashes of operators that did not sign.
+    /// @param commitment The fraudulent commitment whose `hashOfNonSigners` is verified against.
     function _queueSlashing(
         PoolId poolId,
         uint256 targetBlock,
@@ -300,14 +318,19 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
         if (computed != commitment.hashOfNonSigners) {
             revert ErrorsLib.EigenAuctionTaskManager_SignatoryRecordMismatch();
         }
+        
         bytes32[] memory fullSet = indexRegistry.getOperatorListAtBlockNumber(quorumNumber, referenceBlockNumber);
         bytes32 executorId = blsApkRegistry.getOperatorId(commitment.executor);
         uint256 signerCount = _queueSigners(fullSet, executorId, nonSignerPubkeyHashes);
+        
         emit EventsLib.SignatorySlashingQueued(poolId, targetBlock, signerCount);
     }
 
     /// @dev Queues one slashing request per signer (full set minus executor and non-signers).
     /// Split out of `_queueSlashing` to keep the stack shallow under the non-viaIR optimizer.
+    /// @param fullSet BLS pubkey hashes of all operators registered at the reference block.
+    /// @param executorId BLS pubkey hash of the committed executor, skipped during slashing.
+    /// @param nonSignerPubkeyHashes Sorted hashes of operators that did not sign, also skipped.
     function _queueSigners(
         bytes32[] memory fullSet,
         bytes32 executorId,
@@ -315,13 +338,17 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
     ) private returns (uint256 signerCount) {
         IStrategy[] memory strategies_ = _strategies;
         uint256[] memory wads = new uint256[](strategies_.length);
+        
         for (uint256 i; i < wads.length; ++i) {
             wads[i] = wadToSlash;
         }
+        
         for (uint256 i; i < fullSet.length; ++i) {
             bytes32 id = fullSet[i];
             if (id == executorId || _isNonSigner(id, nonSignerPubkeyHashes)) continue;
+            
             address operator = blsApkRegistry.getOperatorFromPubkeyHash(id);
+            
             vetoableSlasher.queueSlashingRequest(
                 IAllocationManagerTypes.SlashingParams({
                     operator: operator,
@@ -332,11 +359,14 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
                 })
             );
             ++signerCount;
+            
             emit EventsLib.OperatorSlashQueued(operator);
         }
     }
 
-    /// @dev Linear membership test over the non-signer hashes.
+    /// @dev Linear scan to check whether a pubkey hash belongs to the non-signer set.
+    /// @param id BLS pubkey hash to search for.
+    /// @param nonSignerPubkeyHashes The non-signer list to search through.
     function _isNonSigner(bytes32 id, bytes32[] calldata nonSignerPubkeyHashes) private pure returns (bool) {
         for (uint256 i; i < nonSignerPubkeyHashes.length; ++i) {
             if (nonSignerPubkeyHashes[i] == id) return true;
@@ -345,6 +375,8 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
     }
 
     /// @dev Validates and stores the slashing config.
+    /// @param strategies_ New strategy set to slash on a fault (must be non-empty).
+    /// @param newWadToSlash New per-strategy slash fraction in wad (must be non-zero; 1e18 = 100%).
     function _setSlashingConfig(IStrategy[] memory strategies_, uint256 newWadToSlash) private {
         if (strategies_.length == 0 || newWadToSlash == 0) {
             revert ErrorsLib.EigenAuctionTaskManager_InvalidSlashingConfig();
@@ -354,13 +386,15 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
         emit EventsLib.SlashingConfigSet(strategies_.length, newWadToSlash);
     }
 
-    /// @dev Verify and set new quorum numbers
+    /// @dev Validates and stores the quorum numbers.
+    /// @param newQuorumNumbers New quorum ids to require (one byte per quorum, must be non-empty).
     function _setQuorumNumbers(bytes memory newQuorumNumbers) private {
         if (newQuorumNumbers.length == 0) revert ErrorsLib.EigenAuctionTaskManager_EmptyQuorumNumbers();
         quorumNumbers = newQuorumNumbers;
     }
 
-    /// @dev Verify and set new threshold bps
+    /// @dev Validates and stores the stake threshold.
+    /// @param newThresholdBps New threshold in basis points (must be > 0 and ≤ BPS = 10_000).
     function _setThreshold(uint256 newThresholdBps) private {
         if (newThresholdBps == 0 || newThresholdBps > ConstantsLib.BPS) revert ErrorsLib.EigenAuctionTaskManager_InvalidThreshold();
         thresholdBps = newThresholdBps;

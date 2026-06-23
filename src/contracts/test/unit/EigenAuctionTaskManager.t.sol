@@ -11,7 +11,7 @@ import {IStrategy} from "eigenlayer-contracts/src/contracts/interfaces/IStrategy
 
 import {EigenAuctionTaskManager} from "../../src/EigenAuctionTaskManager.sol";
 import {Commitment} from "../../src/types/Commitment.sol";
-import {ToBOrder, toBStructHash} from "../../src/types/ToBOrder.sol";
+import {ToBOrder} from "../../src/types/ToBOrder.sol";
 
 import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
 import {EventsLib} from "../../src/libraries/EventsLib.sol";
@@ -228,13 +228,13 @@ contract EigenAuctionTaskManagerTest is Test {
             validForBlock: validForBlock,
             signature: ""
         });
-        bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN, toBStructHash(o)));
+        bytes32 digest = keccak256(abi.encodePacked(hex"1901", DOMAIN, o.toBStructHash()));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SEARCHER_PK, digest);
         o.signature = abi.encodePacked(r, s, v);
     }
 
     function _resultHash(ToBOrder memory arb) internal pure returns (bytes32) {
-        return keccak256(abi.encode(toBStructHash(arb), PRICE, INTENTS_ROOT));
+        return keccak256(abi.encode(arb. toBStructHash(), PRICE, INTENTS_ROOT));
     }
 
     // Commit a result over `committedArb` so it can be challenged.

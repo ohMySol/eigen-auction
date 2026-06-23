@@ -59,10 +59,18 @@ interface IEigenAuctionHook {
     /* LP ACTIONS */
 
     /// @notice Supplies liquidity to the pool through the hook itself.
+    /// @param key The pool to add liquidity to.
+    /// @param tickLower Lower tick of the position's price range.
+    /// @param tickUpper Upper tick of the position's price range.
+    /// @param liquidity Amount of liquidity units to add.
     function addLiquidity(PoolKey calldata key, int24 tickLower, int24 tickUpper, uint128 liquidity) external;
 
     /// @notice Withdraws liquidity previously supplied through `addLiquidity`. Accrued rewards are
     /// paid out automatically.
+    /// @param key The pool to remove liquidity from.
+    /// @param tickLower Lower tick of the position's price range.
+    /// @param tickUpper Upper tick of the position's price range.
+    /// @param liquidity Amount of liquidity units to remove.
     function removeLiquidity(PoolKey calldata key, int24 tickLower, int24 tickUpper, uint128 liquidity) external;
 
     /// @notice Collects accrued rewards for a position without changing its liquidity.
@@ -71,7 +79,14 @@ interface IEigenAuctionHook {
     /// @param tickUpper Upper tick of the position's range.
     function claimRewards(PoolKey calldata key, int24 tickLower, int24 tickUpper) external;
 
-    /// @notice Returns the currency0 rewards a position has accrued (settled plus not-yet-settled).
+    /// @notice Returns the total currency0 rewards a position has accrued — both already settled
+    /// into `owed` and not-yet-checkpointed growth since the last action.
+    /// @param key The pool the position belongs to.
+    /// @param owner Address that owns the position.
+    /// @param tickLower Lower tick of the position's range.
+    /// @param tickUpper Upper tick of the position's range.
+    /// @param salt Position differentiator; use `bytes32(0)` for the default single position per range.
+    /// @return amount Total currency0 claimable right now.
     function earned(
         PoolKey calldata key,
         address owner,
@@ -80,7 +95,13 @@ interface IEigenAuctionHook {
         bytes32 salt
     ) external view returns (uint256 amount);
 
-    /// @notice Returns the liquidity the hook attributes to a position.
+    /// @notice Returns the liquidity units the hook tracks for a position.
+    /// @param key The pool the position belongs to.
+    /// @param owner Address that owns the position.
+    /// @param tickLower Lower tick of the position's range.
+    /// @param tickUpper Upper tick of the position's range.
+    /// @param salt Position differentiator; use `bytes32(0)` for the default single position per range.
+    /// @return Liquidity units attributed to this position.
     function positionLiquidity(
         PoolKey calldata key,
         address owner,

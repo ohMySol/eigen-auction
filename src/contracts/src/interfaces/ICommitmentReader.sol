@@ -12,6 +12,9 @@ import {Commitment} from "../types/Commitment.sol";
 /// ^0.8.27 BLS middleware that `IEigenAuctionTaskManager` requires. Do not co-locate with that
 /// interface. `EigenAuctionTaskManager` satisfies this surface via inheritance.
 interface ICommitmentReader {
-    /// @notice The commitment for `(poolId, targetBlock)`, or a zero struct if none exists.
+    /// @notice Returns the commitment for `(poolId, targetBlock)`, or a zeroed struct if none was recorded.
+    /// @param poolId The pool to look up.
+    /// @param targetBlock The block number the commitment is for.
+    /// @return The stored commitment; check `exists` before using other fields.
     function getCommitment(PoolId poolId, uint256 targetBlock) external view returns (Commitment memory);
 }

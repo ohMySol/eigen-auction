@@ -18,7 +18,13 @@ import {TickCrossingLib} from "./TickCrossingLib.sol";
 library PoolRewardsLib {
     using StateLibrary for IPoolManager;
 
-    /// @notice Reward growth (X128) accumulated inside `[tickLower, tickUpper]` at `currentTick`.
+    /// @notice Returns the reward growth (X128) that accrued inside the tick range
+    /// `[tickLower, tickUpper]` relative to the current pool tick.
+    /// @param self The pool's reward accumulator.
+    /// @param currentTick The pool's current tick.
+    /// @param tickLower Lower tick of the position's range.
+    /// @param tickUpper Upper tick of the position's range.
+    /// @return Reward growth inside the range (X128 fixed point).
     function getGrowthInside(
         PoolRewards storage self,
         int24 currentTick,
@@ -35,11 +41,16 @@ library PoolRewardsLib {
         );
     }
 
-    /// @notice Initializes a tick's outside accumulator the first time it becomes a position
-    /// boundary, following Uniswap's convention: if the current price is at or above the tick, all
-    /// historical growth is considered to lie "below" it, so its outside value seeds to the global
-    /// accumulator. Ticks already initialized in V4 (gross liquidity > 0) are left untouched.
+    /// @notice Seeds the outside accumulator for a tick the first time it becomes a position
+    /// boundary. Follows Uniswap's convention: if the current price is at or above the tick, all
+    /// historical growth is treated as lying "below" it, so the outside value is seeded to the
+    /// global accumulator. Ticks already initialized in V4 (gross liquidity > 0) are left untouched.
     /// @dev Call this for both boundaries *before* adding the liquidity that initializes them.
+    /// @param self The pool's reward accumulator.
+    /// @param poolManager V4 pool manager, used to check whether the tick already has gross liquidity.
+    /// @param poolId Pool whose tick state is checked.
+    /// @param tick The tick boundary being initialized.
+    /// @param currentTick The pool's current tick at the time of the LP add.
     function initializeBoundary(
         PoolRewards storage self,
         IPoolManager poolManager,
@@ -54,8 +65,10 @@ library PoolRewardsLib {
         }
     }
 
-    /// @notice Snapshots the pool tick before a swap so `crossTicks` can flip the boundaries the
-    /// swap crosses.
+    /// @notice Records the pool tick just before a swap so `crossTicks` can later identify which
+    /// boundaries the swap crossed.
+    /// @param self The pool's reward accumulator.
+    /// @param tick The current pool tick, read in `_beforeSwap`.
     function snapshotTick(PoolRewards storage self, int24 tick) internal {
         self.priorTick = tick;
     }
@@ -65,6 +78,11 @@ library PoolRewardsLib {
     /// @dev MUST run before any reward for that swap is folded, so flips are taken relative to the
     /// pre-reward global accumulator (V3 convention). Safe to call on swaps that add no reward — the
     /// flip of an unchanged global keeps the inside/outside bookkeeping consistent as price moves.
+    /// @param self The pool's reward accumulator whose outside values are updated.
+    /// @param poolManager V4 pool manager, used to read tick bitmap words.
+    /// @param poolId Pool whose ticks are being processed.
+    /// @param tickSpacing The pool's tick spacing.
+    /// @param newTick The tick the pool landed on after the swap.
     function crossTicks(
         PoolRewards storage self,
         IPoolManager poolManager,
@@ -82,12 +100,13 @@ library PoolRewardsLib {
         );
     }
 
-    /// @notice Folds `amount` of currency0 reward into the global accumulator, spread across the
-    /// currently active liquidity. No-op when there is nothing to distribute or no active liquidity.
+    /// @notice Adds `amount` of currency0 reward to the pool-wide growth accumulator, spread evenly
+    /// across the currently active liquidity. No-op when `amount` is zero or no liquidity is active.
     /// @dev Call after `crossTicks` so the reward accrues only to positions in range at the current
     /// (post-swap) tick.
-    /// @param amount Reward in currency0.
-    /// @param poolLiquidity Active liquidity to spread the reward across.
+    /// @param self The pool's reward accumulator.
+    /// @param amount Reward in currency0 to distribute.
+    /// @param poolLiquidity Currently active liquidity units to spread the reward across.
     function fold(PoolRewards storage self, uint256 amount, uint128 poolLiquidity) internal {
         if (amount == 0 || poolLiquidity == 0) return;
         unchecked {
