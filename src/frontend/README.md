@@ -1,5 +1,10 @@
 # Frontend — LP Dashboard + Trade UI
 
+> **Heads up — this is outdated relative to the contracts.** The contracts have moved to the BLS
+> operator-set design, so the deployment artifacts, ABIs, and some flows referenced here are ahead of
+> what this app wires up. It's being updated to match — until then, expect parts of the UI to lag the
+> current contracts. See [../contracts/README.md](../contracts/README.md) for the current on-chain design.
+
 React SPA built with Vite. Connects to the deployed contracts via wagmi/viem. Falls back to a fully functional mock data layer when no deployment artifact is present, so the UI works for design work without a chain.
 
 ```

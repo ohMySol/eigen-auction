@@ -1,5 +1,12 @@
 # Backend — AVS Operator + Searcher RPC
 
+> **Heads up — this is outdated relative to the contracts.** The contracts have moved to the BLS
+> operator-set design (a stake-weighted quorum BLS-signs each block's result, the aggregator commits
+> it on-chain, and the chosen executor settles). This backend still does single-operator ECDSA
+> signing in `signer.ts` and has not been ported yet. It's being updated — until then, treat the flow
+> below as the legacy single-operator version. The target design is described in
+> [../contracts/README.md](../contracts/README.md).
+
 Two Node.js services that run the off-chain side of the EigenAuction loop.
 
 ```

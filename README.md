@@ -1,72 +1,98 @@
+<p align="center">
+  <img src="docs/assets/EigenAuctionHome.jpg" alt="EigenAuction — give LPs back what MEV takes" width="800" />
+</p>
+
 # EigenAuction — LVR Auction Hook for Uniswap V4
 
-EigenAuction is a Uniswap V4 hook that eliminates Loss-versus-Rebalancing (LVR) for LPs by running an on-chain arbitrage auction secured by EigenLayer. Instead of MEV searchers capturing arbitrage profit at LP expense, the auction routes that profit back to liquidity providers.
+EigenAuction is a Uniswap V4 hook that gives liquidity providers back the value MEV usually takes from them. Every block, the right to arbitrage the pool is sold in a sealed auction secured by an EigenLayer AVS. The winning bid is paid to the LPs who hold the liquidity, instead of leaking to searchers and block builders.
 
 ---
 
-## Current Project State
-This **project is in active development** so the code and documentation will change over the time. Once the project will be available in the testnet this section will mention this.
+## Contents
 
-For people interested in the project and want to contribute, here are the parts which require work and improvements:
-- Refactor auction results signing to BLS Signatures + Aggregator (Contracts + Backend):
-On-chain accept a BLS-aggregated threshold signature from the operator set, verified via EigenLayer's `BLSSignatureChecker` should require a recorded commitment before executing the settlement. On the backend side, build an aggregator that collects partial BLS signatures from operator nodes each block and submits the aggregate on-chain.
-- For the backend we need to replace the current single-operator signing in signer.ts with the BLS partial signature collection + submission to the aggregator.
-- LP dashboard, swap widget to sign SwapIntent and sent to operator RPC and pool statistics.
+- [Current project state](#current-project-state)
+- [The problem](#the-problem)
+- [The solution](#the-solution)
+  - [What is application-specific sequencing](#what-is-application-specific-sequencing)
+- [Architecture](#architecture)
+- [Repository layout](#repository-layout)
+- [Quick start](#quick-start)
+- [Tests](#tests)
+- [Contributing](#contributing)
+- [More documentation](#more-documentation)
 
-Everyone interested in contributing is welcome! If you have experience with any of the areas listed below, you're welcome twice over:
-- Unsiwap V3/V4 + hooks.
-- EigenLayer AVS operator software internals (e.g. smth similar to EigenDA, Lagrange, or Espresso operator nodes). BLS cryptography background with BLS12-381, P2P networking (libp2p or similar) for operator-to-aggregator communication is a plus.
-- Application-Specific-Sequencing with understanding of how per-block ordering works (Angstrom style for exmaple). This applied to both the auction design and how the operator selects and commits the winning `ToBOrder`. 
-- For frontend standard web3 stack (wagmi/viem, EIP-712 signing).
 ---
 
-## The Problem
+## Current project state
 
-Every AMM suffers LVR: whenever the pool price diverges from the CEX price, arbitrageurs profit by pushing the pool back to fair value. That profit comes directly from LPs — it is a structural, unavoidable cost of providing liquidity. On Ethereum mainnet, LVR accounts for roughly 50–80% of LP losses on concentrated pools.
+This project is in **active development**, so the code and documentation will keep changing. Once it is live on a testnet, this section will say so.
 
-## The Solution
+The on-chain side has moved to a **BLS operator-set design**: auction results are attested by a stake-weighted quorum of the operator set, verified on-chain through EigenLayer's BLS middleware, and only then settled. The smart contracts for this (commit, settle, challenge, slash, rewards) are implemented and tested. The backend and frontend requires an update - see their READMEs.
 
-EigenAuction replaces open arbitrage competition with a per-block sealed auction:
+If you want to contribute, the open areas are:
 
-1. Arbitrageurs see opportunity in the pool where the hook is connected and bid on our **/bid** endpoint for the right to execute arbitrage trade in the next block. 
-2. The AVS operators quorum selects the highest bid.
-3. The randomly selected operator calls `settle()`: transfers arbitrageur bid upfront to in-range LPs, then atomically executes the arb swap + all queued user swaps inside a single Uniswap V4 unlock.
-4. LPs receive arb profits proportional to their liquidity share; EigenLayer slashing punishes any operator that cheats
+- **Backend aggregator** — collect partial BLS signatures from operator nodes each block, aggregate them, select the executor off-chain, and submit the commitment on-chain. The current `signer.ts` still does single-operator ECDSA signing and needs to be replaced.
+- **Operator node** — BLS keygen, registration through the registry coordinator, and the per-block auction loop.
+- **Frontend** — LP dashboard, a swap widget that signs a `SwapIntent` and sends it to the operator RPC, and pool statistics.
+
+See [Contributing](#contributing) for the skills that help most.
+
+---
+
+## The problem
+
+Every AMM leaks value to arbitrage. Whenever the pool price drifts from the wider market price, arbitrageurs trade against the pool to pull it back to fair value, and the profit they make comes straight out of LP pockets. This is **Loss-Versus-Rebalancing (LVR)** - a structural cost of providing liquidity, not a bug. On mainnet it accounts for a large share of what LPs lose on active pools.
+
+Today that profit is captured by searchers and block builders through transaction ordering. LPs collect swap fees but eat the LVR. The result: providing liquidity is far less profitable than it looks.
+
+---
+
+## The solution
+
+EigenAuction turns that leak into LP revenue. Instead of letting searchers race to extract the arbitrage for free, the protocol **sells the arbitrage right** and pays the proceeds to LPs.
+
+Each block:
+
+1. **Searchers bid.** An arbitrageur signs a top-of-block order (`ToBOrder`) describing the trade it wants to run. The bid is the surplus that order leaves on the table, and it is always denominated in `currency0`.
+2. **The operator set picks the winner.** A stake-weighted BLS quorum of EigenLayer operators agrees off-chain on the winning order, the user swaps to include, a single clearing price, and which operator will submit it. They co-sign that result.
+3. **The result is committed on-chain.** The aggregated BLS signature is verified against the operator set's stake. Once the commitment exists, only the pre-selected operator (the *executor*) can settle it.
+4. **One atomic settlement.** The executor calls `settle()`. Inside a single Uniswap V4 unlock, the arbitrage runs first, then all user swaps clear at one uniform price. The arbitrage bid is folded into LP rewards proportional to in-range liquidity.
+5. **Cheating is punished.** Anyone can submit a strictly-better signed order within the challenge window. If they do, the operators who signed the bad result are slashed on EigenLayer.
+
+The net effect: the arbitrage profit that used to leak to searchers is paid back to the LPs who actually carry the risk.
+
+### What is application-specific sequencing
+
+Normally, the order of transactions inside a block is decided by the block proposer/builder. That ordering power is exactly what lets searchers sandwich, front-run, and back-run — it is where MEV comes from.
+
+**Application-specific sequencing (ASS)** flips that around: a single application decides the order of *its own* transactions, and hands the chain one pre-ordered, atomic batch. The proposer can include or exclude the batch, but it cannot reorder, split, or insert anything into it.
+
+EigenAuction uses this model. The pool's own operator set is the sequencer for that pool:
+
+- exactly **one** arbitrage trade runs at the top of the block
+- every user swap in the batch clears at a **single uniform price**, so there is no advantageous position to fight over inside the batch
+- the whole thing executes in **one Uniswap V4 unlock**, so a builder cannot wedge a sandwich around it
+
+Because the operators commit to the batch with a BLS quorum signature *before* it settles, the sequencing decision is accountable: it is verifiable on-chain and slashable if it was dishonest. This is the same idea Angstrom following, but our solution is secured by an EigenLayer AVS rather than a single trusted node.
 
 ---
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                    Uniswap V4 Pool                       │
-│                                                          │
-│   EigenAuctionHook                                       │
-│   ├── beforeSwap: pool lock check + JIT guard            │
-│   ├── afterSwap:  reward distribution to LPs             │
-│   └── afterModifyLiquidity: position tracking            │
-└──────────────┬───────────────────────────────────────────┘
-               │ only settler can swap
-┌──────────────▼───────────────────────────────────────────┐
-│                      Settler.sol                         │
-│   settle(key, rewardAmount, arbitrage, intents)          │
-│   ├── Step 1: arbitrage swap (pool → CEX price)          │
-│   └── Step 2: fill queued user intents (EIP-712)         │
-└──────────────┬───────────────────────────────────────────┘
-               │ winner check
-┌──────────────▼───────────────────────────────────────────┐
-│             AuctionServiceManager.sol (EigenLayer AVS)   │
-│   commitWinner(poolId, block, winner, bid, signatures)   │
-│   └── m-of-n ECDSA threshold, challenge window, slash    │
-└──────────────┬───────────────────────────────────────────┘
-               │
-┌──────────────▼───────────────────────────────────────────┐
-│                     Off-chain stack                      │
-│   avs-auction   — operator loop: price watch → commit    │
-│   searcher-rpc  — HTTP: intent + bid intake queue        │
-│   frontend      — LP dashboard + trade UI (React/wagmi)  │
-└──────────────────────────────────────────────────────────┘
-```
+At a high level there are three layers: people who sign orders off-chain, an operator set that turns those orders into a signed, committed batch, and the on-chain contracts that verify the commitment and settle it atomically.
+
+> Diagram is in progress and will be attached soon
+
+![EigenAuction system architecture](docs/assets/system-architecture.png)
+
+The four contracts we deploy:
+
+- **`EigenAuctionHook`** — a V4 hook that locks each pool to a single settler and runs a V3-style reward accumulator so the arbitrage bid is split across in-range LPs.
+- **`EigenAuctionServiceManager`** — the AVS identity on EigenLayer: metadata, operator-fee custody, and reward submission.
+- **`EigenAuctionTaskManager`** — verifies the BLS quorum, stores the per-block commitment, and slashes operators for fraud commitments.
+- **`Settler`** — re-checks the commitment, gates on the chosen executor, and executes the whole batch atomically inside one V4 unlock.
+
+For the full on-chain breakdown — BLS verification, the AVS lifecycle, slashing, and rewards — see [src/contracts/README.md](src/contracts/README.md).
 
 ---
 
@@ -74,99 +100,81 @@ EigenAuction replaces open arbitrage competition with a per-block sealed auction
 
 ```
 src/
-  contracts/           Solidity (Foundry)
+  contracts/                 Solidity (Foundry) — see src/contracts/README.md
     src/
-      EigenAuctionHook.sol      V4 hook, pool lock, reward distribution
-      Settler.sol               Atomic arbitrage + intent settlement
-      AuctionServiceManager.sol EigenLayer AVS, winner commit, challenge, slash
-      interfaces/               Public interfaces for all three contracts
-      libraries/                ErrorsLib, EventsLib, ConstantsLib, RewardGrowthLib
-    script/
-      DeployTestnet.s.sol       Sepolia: FaucetTokens + protocol + seeded LP
-      Deploy.s.sol              Mainnet fork: uses real USDC/WETH
-      base/DeployCore.sol       Shared deploy logic
-    test/
-      unit/                     53 Foundry tests across all contracts
+      EigenAuctionHook.sol            V4 hook: pool lock + LP reward accumulator
+      EigenAuctionServiceManager.sol  EigenLayer AVS identity, fee custody, rewards
+      EigenAuctionTaskManager.sol     BLS commit, fraud challenge, slashing
+      Settler.sol                     Atomic batch settlement (arb + uniform-price intents)
+      interfaces/                     Public interfaces
+      types/                          ToBOrder, SwapIntent, Commitment, Position, PoolRewards
+      libraries/                      Errors, Events, Constants, reward-growth math
+    script/                           Deploy + middleware wiring (Foundry)
+    test/                        
 
   backend/
-    avs-auction/         Operator node (runs the block-by-block auction loop)
-    searcher-rpc/        HTTP API (intent + bid intake, Redis queue)
-    shared/              Config, ABIs, types shared by both services
+    avs-auction/             Operator node — per-block auction loop (being updated for BLS)
+    searcher-rpc/            HTTP API — signed intent + bid intake
+    shared/                  Config, ABIs, types
 
   frontend/
-    app/                 React SPA — LP dashboard, pool stats, trade view
-      chain/             wagmi hooks, deployment artifact loader, V4 math
+    app/                     React SPA — LP dashboard, trade view, pool stats
+      chain/                 wagmi hooks, deployment artifact loader, V4 math
 
-deployments/             JSON artifacts written by deploy scripts, read by backend + frontend
+deployments/                 JSON artifacts written by deploy scripts, read by backend + frontend
+docs/assets/                 Diagrams + images
 ```
-
----
-
-## Contracts
-
-See [src/contracts/](src/contracts/) for full Solidity source.
-
-| Contract | Description |
-|---|---|
-| `EigenAuctionHook` | V4 hook — pool lock, JIT guard, V3-style tick-outside reward accumulator |
-| `Settler` | Atomic settlement — arbitrage swap + EIP-712 intent fills in one V4 unlock |
-| `AuctionServiceManager` | EigenLayer AVS — m-of-n ECDSA commit, challenge window, slashing |
 
 ---
 
 ## Quick start
 
+> This section requires update. Below instructions may not work correctly at the moment because the backend and frontend requires changes after moving to BLS signing.
+
 ### Sepolia testnet
-! Script is working, but verification should be fixed. Contracts can be deployed successfully but needs to be verified.
 
 ```bash
 cp .env.example .env           # fill SEPOLIA_RPC_URL, DEPLOYER_PK, OPERATOR_PK, ETHERSCAN_API_KEY
-make deploy-testnet            # deploy + verify contracts, write deployments/11155111.json
-docker compose up --build      # start all 4 services → http://localhost:8080
+make deploy-testnet            # deploy contracts, write deployments/11155111.json
+make up                        # start the off-chain services
 ```
 
 ### Local mainnet fork
 
 ```bash
-make anvil-fork                # terminal 1: fork mainnet at chainId 1
-make fund deploy-fork seed     # terminal 2: fund wallets + deploy + seed LP
-docker compose up -d redis
+make anvil-fork                # terminal 1: fork mainnet
+make fund deploy-fork seed     # terminal 2: fund wallets + deploy + seed an LP position
 make start-server              # searcher-rpc
 make start-operator            # avs-auction operator
-make frontend-dev              # Vite dev server → http://localhost:5173
+make frontend-dev              # Vite dev server
 ```
-
-For a full narrated demo flow, see [DEMO_GUIDE.md](DEMO_GUIDE.md).
 
 ---
 
 ## Tests
+> Contracts tests work as expected and they are up to date. Backen tests requires update.
 
 ```bash
 make test          # all tests: forge (Solidity) + vitest (TypeScript)
 make build         # compile contracts only
 ```
 
-53 Foundry unit tests + 34 TypeScript tests. Coverage: reward distribution, JIT detection, pool lock, fallback period, EIP-712 nonce bitmaps, challenge window, slash mechanics.
-
 ---
 
-## Key design decisions
+## Contributing
 
-**Rewards outside V4 accounting.** The operator calls `IERC20.transferFrom(operator, hook, rewardAmount)` directly — outside V4's sync/settle flow — before the arbitrage swap executes. This avoids `CurrencyNotSettled` reverts and keeps the reward accounting independent of V4 delta math.
+Everyone is welcome. You'll be especially useful if you know:
 
-**V3-style tick-outside accumulators.** `rewardGrowthGlobalX128` mirrors Uniswap V3's `feeGrowthGlobalX128`. Each LP position tracks `rewardGrowthInsideLast` at add/remove time; `earned()` computes the delta. Rewards are automatically paid when liquidity is removed — no separate claim transaction needed.
-
-**JIT guard.** Before executing the arbitrage, the operator reads pool liquidity and passes it as `expectedLiquidity` in hookData. `beforeSwap` reverts if the actual liquidity differs, preventing JIT LPs from adding liquidity after the operator's snapshot to dilute existing LPs' rewards.
-
-**Fallback period.** If no settlement lands within `FALLBACK_PERIOD` blocks, the pool re-opens to public swaps. This prevents a liveness failure if the operator goes offline.
-
-**Single operator for testnet demo.** `QUORUM_THRESHOLD = 1`. The full Angstrom-style multi-operator quorum with BFT winner selection is the next milestone.
+- **Uniswap V3/V4 and hooks** — the auction design and the reward accumulator.
+- **EigenLayer AVS operator software** (think EigenDA, Lagrange, or Espresso operator nodes). BLS cryptography over BLS12-381 and P2P networking (libp2p or similar) for operator-to-aggregator messaging is a big plus.
+- **Application-specific sequencing** — how per-block ordering works (Angstrom-style), both for the auction and for how the operator selects and commits the winning `ToBOrder`.
+- **Frontend web3** — the standard wagmi/viem + EIP-712 signing stack.
 
 ---
 
 ## Documentation
 
-- [src/backend/README.md](src/backend/README.md) — operator node + searcher-rpc architecture
-- [src/frontend/README.md](src/frontend/README.md) — React app, wagmi hooks, deployment artifact
-- [src/contracts/README.md](src/contracts/README.md) — smart contracts part: AVS + hook + settler
+- [src/contracts/README.md](src/contracts/README.md)
+- [src/backend/README.md](src/backend/README.md)
+- [src/frontend/README.md](src/frontend/README.md)
+</content>
