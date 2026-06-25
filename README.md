@@ -83,7 +83,7 @@ The system has 3 layers: the actors who interact with the protocol (LPs, traders
 
 Below you can see the full architecture of EigenAuction with on-chain and off-chain components and actors that use the system.
 
-![EigenAuction Architecture](docs/assets/EigenAuctionArchitecture.jpg)
+![EigenAuction Architecture](docs/assets/EigenAuctionArchitecture.excalidraw.png)
 
 ---
 
