@@ -25,7 +25,7 @@ EigenAuction is a Uniswap V4 hook that gives liquidity providers back the value 
 
 ## Current project state
 
-This project is in **active development**, so the code and documentation will keep changing. Once it is live on a testnet, this section will say so.
+This project is in **active development**, so the code, documentation and diagrams will keep changing. Once it is live on a testnet, this section will say so.
 
 The on-chain side has moved to a **BLS operator-set design**: auction results are attested by a stake-weighted quorum of the operator set, verified on-chain through EigenLayer's BLS middleware, and only then settled. The smart contracts for this (commit, settle, challenge, slash, rewards) are implemented and tested. The backend and frontend requires an update - see their READMEs.
 
@@ -79,20 +79,11 @@ Because the operators commit to the batch with a BLS quorum signature *before* i
 
 ## Architecture
 
-At a high level there are three layers: people who sign orders off-chain, an operator set that turns those orders into a signed, committed batch, and the on-chain contracts that verify the commitment and settle it atomically.
+The system has 3 layers: the actors who interact with the protocol (LPs, traders, searchers, operators), the off-chain stack that runs the per-block auction and submits results and the on-chain contracts that verify and settle atomically. Contracts are splitted on EigenAuction contracts and the EigenLayer infrastructure that handles quorum verification, slashing, and rewards.
 
-> Diagram is in progress and will be attached soon
+Below you can see the full architecture of EigenAuction with on-chain and off-chain components and actors that use the system.
 
-![EigenAuction system architecture](docs/assets/system-architecture.png)
-
-The four contracts we deploy:
-
-- **`EigenAuctionHook`** — a V4 hook that locks each pool to a single settler and runs a V3-style reward accumulator so the arbitrage bid is split across in-range LPs.
-- **`EigenAuctionServiceManager`** — the AVS identity on EigenLayer: metadata, operator-fee custody, and reward submission.
-- **`EigenAuctionTaskManager`** — verifies the BLS quorum, stores the per-block commitment, and slashes operators for fraud commitments.
-- **`Settler`** — re-checks the commitment, gates on the chosen executor, and executes the whole batch atomically inside one V4 unlock.
-
-For the full on-chain breakdown — BLS verification, the AVS lifecycle, slashing, and rewards — see [src/contracts/README.md](src/contracts/README.md).
+![EigenAuction Architecture](docs/assets/EigenAuctionArchitecture.jpg)
 
 ---
 
