@@ -10,9 +10,6 @@ library ErrorsLib {
     /// @notice Thrown during construction when a required address argument is the zero address
     error EigenAuctionHook_ZeroAddress();
 
-    /// @notice Thrown when `addLiquidity`/`removeLiquidity` is called with a zero liquidity amount
-    error EigenAuctionHook_ZeroLiquidity();
-
     /// @notice Thrown when a swap reaches the hook from an address other than the registered settler
     /// while the fallback period has not yet elapsed
     error EigenAuctionHook_NotSettler();

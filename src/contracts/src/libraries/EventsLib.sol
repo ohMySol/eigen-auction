@@ -30,42 +30,14 @@ library EventsLib {
         uint256 rewardAmount
     );
 
-    /// @notice Emitted when an LP claims rewards for a position
+    /// @notice Emitted when a position's accrued rewards are paid out on removal (currency0)
     /// @param poolId ID of the pool
-    /// @param lp Liquidity provider (position owner) address
+    /// @param owner Position owner as V4 attributes it — the router / PositionManager address
     /// @param amount Reward paid in currency0
     event RewardsClaimed(
         PoolId indexed poolId,
-        address indexed lp,
+        address indexed owner,
         uint256 amount
-    );
-
-    /// @notice Emitted when an LP adds liquidity through the hook's own entry point
-    /// @param poolId ID of the pool
-    /// @param lp Liquidity provider that supplied the position
-    /// @param tickLower Lower tick of the position's range
-    /// @param tickUpper Upper tick of the position's range
-    /// @param liquidity Liquidity units added
-    event LiquidityAdded(
-        PoolId indexed poolId,
-        address indexed lp,
-        int24 tickLower,
-        int24 tickUpper,
-        uint128 liquidity
-    );
-
-    /// @notice Emitted when an LP removes liquidity through the hook's own entry point
-    /// @param poolId ID of the pool
-    /// @param lp Liquidity provider that withdrew the position
-    /// @param tickLower Lower tick of the position's range
-    /// @param tickUpper Upper tick of the position's range
-    /// @param liquidity Liquidity units removed
-    event LiquidityRemoved(
-        PoolId indexed poolId,
-        address indexed lp,
-        int24 tickLower,
-        int24 tickUpper,
-        uint128 liquidity
     );
 
     /* ───────────────────────── Settler Events ───────────────────────── */
