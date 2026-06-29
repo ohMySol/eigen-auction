@@ -6,6 +6,7 @@ import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
+import {ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
@@ -50,7 +51,11 @@ contract SettlerTest is Test, Deployers {
         mockAvs = new MockEigenAuctionServiceManager();
         mockAvs.setOperator(OPERATOR, true);
 
-        uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
+        uint160 flags = uint160(
+            Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+                | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_RETURNS_DELTA_FLAG
+                | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+        );
         address hookAddress = address(flags);
         deployCodeTo("EigenAuctionHook.sol", abi.encode(address(manager), address(mockAvs), address(this)), hookAddress);
         hook = EigenAuctionHook(payable(hookAddress));
@@ -63,10 +68,18 @@ contract SettlerTest is Test, Deployers {
         settler = new Settler(address(manager), address(mockAvs), address(taskManager), address(this), 0);
         hook.setSettler(address(settler));
 
-        // Seed liquidity through the hook so the LP is reward-tracked.
+        // Seed liquidity through the standard V4 router so the position is reward-tracked. The hook
+        // attributes the position to the router (the owner V4 sees), so reward queries use that address.
         _fundAndApprove(LP, 1_000e18);
-        vm.prank(LP);
-        hook.addLiquidity(poolKey, -600, 600, 100e18);
+        vm.startPrank(LP);
+        MockERC20(Currency.unwrap(currency0)).approve(address(modifyLiquidityRouter), type(uint256).max);
+        MockERC20(Currency.unwrap(currency1)).approve(address(modifyLiquidityRouter), type(uint256).max);
+        modifyLiquidityRouter.modifyLiquidity(
+            poolKey,
+            ModifyLiquidityParams({tickLower: -600, tickUpper: 600, liquidityDelta: int256(uint256(100e18)), salt: bytes32(0)}),
+            ""
+        );
+        vm.stopPrank();
 
         user = vm.addr(USER_PK);
         user2 = vm.addr(USER2_PK);
@@ -286,7 +299,8 @@ contract SettlerTest is Test, Deployers {
         vm.prank(OPERATOR);
         settler.settle(poolKey, arb, _noIntents(), 0);
 
-        uint256 earned = hook.earned(poolKey, LP, -600, 600, bytes32(0));
+        // Position is attributed to the router that opened it, so reward queries use that address.
+        uint256 earned = hook.earned(poolKey, address(modifyLiquidityRouter), -600, 600, bytes32(0));
         assertGt(earned, 0);
         // Bid cannot exceed the generous input.
         assertLt(earned, quantityIn);

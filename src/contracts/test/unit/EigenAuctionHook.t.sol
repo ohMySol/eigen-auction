@@ -6,7 +6,7 @@ import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
-import {SwapParams} from "v4-core/types/PoolOperation.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
 import {PoolSwapTest} from "v4-core/test/PoolSwapTest.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
@@ -43,7 +43,11 @@ contract EigenAuctionHookTest is Test, Deployers {
 
         mockAvs = new MockEigenAuctionServiceManager();
 
-        uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
+        uint160 flags = uint160(
+            Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+                | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_RETURNS_DELTA_FLAG
+                | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+        );
         address hookAddress = address(flags);
         deployCodeTo("EigenAuctionHook.sol", abi.encode(address(manager), address(mockAvs), address(this)), hookAddress);
         hook = EigenAuctionHook(payable(hookAddress));
@@ -57,13 +61,19 @@ contract EigenAuctionHookTest is Test, Deployers {
         MockERC20(Currency.unwrap(currency0)).approve(address(arbHelper), type(uint256).max);
         MockERC20(Currency.unwrap(currency1)).approve(address(arbHelper), type(uint256).max);
 
-        // Seed an in-range LP through the hook so it is reward-tracked.
+        // The LP supplies through the standard V4 router; the hook attributes the position to the
+        // router (the owner V4 sees), so reward queries use `address(modifyLiquidityRouter)`.
         MockERC20(Currency.unwrap(currency0)).mint(lp, 1_000e18);
         MockERC20(Currency.unwrap(currency1)).mint(lp, 1_000e18);
         vm.startPrank(lp);
-        MockERC20(Currency.unwrap(currency0)).approve(address(hook), type(uint256).max);
-        MockERC20(Currency.unwrap(currency1)).approve(address(hook), type(uint256).max);
+        MockERC20(Currency.unwrap(currency0)).approve(address(modifyLiquidityRouter), type(uint256).max);
+        MockERC20(Currency.unwrap(currency1)).approve(address(modifyLiquidityRouter), type(uint256).max);
         vm.stopPrank();
+    }
+
+    /// @dev Position owner as the hook sees it — the router that opened the position.
+    function _lpOwner() internal view returns (address) {
+        return address(modifyLiquidityRouter);
     }
 
     function _bal(Currency c, address a) internal view returns (uint256) {
@@ -72,7 +82,16 @@ contract EigenAuctionHookTest is Test, Deployers {
 
     function _addLp(uint128 liq) internal {
         vm.prank(lp);
-        hook.addLiquidity(poolKey, TICK_LOWER, TICK_UPPER, liq);
+        modifyLiquidityRouter.modifyLiquidity(
+            poolKey,
+            ModifyLiquidityParams({
+                tickLower: TICK_LOWER,
+                tickUpper: TICK_UPPER,
+                liquidityDelta: int256(uint256(liq)),
+                salt: bytes32(0)
+            }),
+            ""
+        );
     }
 
     function _arbSwap() internal {
@@ -92,19 +111,33 @@ contract EigenAuctionHookTest is Test, Deployers {
         _arbSwap();
 
         assertEq(_bal(currency0, address(hook)), REWARD);
-        assertApproxEqAbs(hook.earned(poolKey, lp, TICK_LOWER, TICK_UPPER, bytes32(0)), REWARD, 2);
+        assertApproxEqAbs(hook.earned(poolKey, _lpOwner(), TICK_LOWER, TICK_UPPER, bytes32(0)), REWARD, 2);
     }
 
-    function test_ClaimRewards_Pays_Without_Removing() public {
+    /// @notice A zero-liquidity removal collects accrued rewards without exiting the position. The LVR
+    /// reward rides out as the hook's currency0 delta; V4 also settles the position's accrued swap fees
+    /// in the same poke, so the LP's currency0 gain is at least the reward.
+    function test_ZeroLiquidityRemove_Collects_Rewards_In_Place() public {
         _addLp(1e18);
         vm.roll(block.number + 1);
         _arbSwap();
 
+        uint256 reward = hook.earned(poolKey, _lpOwner(), TICK_LOWER, TICK_UPPER, bytes32(0));
+        assertApproxEqAbs(reward, REWARD, 2);
+
         uint256 before = _bal(currency0, lp);
         vm.prank(lp);
-        hook.claimRewards(poolKey, TICK_LOWER, TICK_UPPER);
-        assertApproxEqAbs(_bal(currency0, lp) - before, REWARD, 2);
-        assertEq(hook.earned(poolKey, lp, TICK_LOWER, TICK_UPPER, bytes32(0)), 0);
+        modifyLiquidityRouter.modifyLiquidity(
+            poolKey,
+            ModifyLiquidityParams({tickLower: TICK_LOWER, tickUpper: TICK_UPPER, liquidityDelta: 0, salt: bytes32(0)}),
+            ""
+        );
+        // Reward (plus any accrued swap fees) is paid out; the LVR reward leaves the hook.
+        assertGe(_bal(currency0, lp) - before, reward, "LP did not receive the reward");
+        assertApproxEqAbs(_bal(currency0, address(hook)), 0, 1, "reward left the hook");
+        assertEq(hook.earned(poolKey, _lpOwner(), TICK_LOWER, TICK_UPPER, bytes32(0)), 0);
+        // Position is intact — liquidity unchanged.
+        assertEq(hook.positionLiquidity(poolKey, _lpOwner(), TICK_LOWER, TICK_UPPER, bytes32(0)), 1e18);
     }
 
     /* JIT GUARD */
@@ -138,7 +171,7 @@ contract EigenAuctionHookTest is Test, Deployers {
         );
 
         assertEq(_bal(currency0, address(hook)), 0);
-        assertEq(hook.earned(poolKey, lp, TICK_LOWER, TICK_UPPER, bytes32(0)), 0);
+        assertEq(hook.earned(poolKey, _lpOwner(), TICK_LOWER, TICK_UPPER, bytes32(0)), 0);
     }
 
     /* ACCESS CONTROL */
