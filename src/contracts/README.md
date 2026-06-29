@@ -32,9 +32,7 @@ The on-chain part of EigenAuction. Four contracts run a per-block, BLS-secured a
 
 Four contracts, split by concern. The thing that ties them together is a **commitment**: a per-block record, attested by the operator set, of exactly which batch may settle and who may submit it.
 
-> Diagram is in progress and will be attached soon
-
-![EigenAuction on-chain architecture](../../docs/assets/onchain-architecture.png)
+![EigenAuction on-chain architecture](../../docs/assets/EigenAuctionContractsArchitecture.excalidraw.png)
 
 | Contract | Responsibility |
 |---|---|
@@ -62,13 +60,15 @@ The TaskManager pulls in the EigenLayer BLS middleware (`^0.8.27`). The Settler 
 
 ### EigenAuctionHook
 
-A Uniswap V4 hook (`beforeSwap` + `afterSwap` only) that locks the pool and pays LPs.
+A Uniswap V4 hook (`beforeSwap`, `afterSwap`, `beforeAddLiquidity`, `beforeRemoveLiquidity`, `afterRemoveLiquidity`) that locks the pool and pays LPs.
 
 **Pool lock.** Once the owner calls `setSettler` (once), only that settler may move the pool price, at most once per block (`recordSettlement`). Any other swap is rejected — unless `FALLBACK_PERIOD` (5) blocks pass with no settlement, at which point the pool re-opens to public swaps so a stalled operator can't freeze it forever.
 
 **JIT guard.** Before the arbitrage swap, the Settler snapshots pool liquidity and passes it in `hookData`. `beforeSwap` reverts if liquidity changed, so nobody can add just-in-time liquidity to skim a block's reward and leave.
 
-**Reward accumulator.** Rewards (always `currency0`) use the Uniswap V3-style growth pattern. A per-pool `PoolRewards` accumulator tracks cumulative reward-per-unit-liquidity; each tick boundary stores its "outside" value, flipped as swaps cross it; each position checkpoints the inside value it last saw. `distributeReward` folds the arbitrage bid into the accumulator for **whoever is in range now**. LPs collect with `claimRewards`, or automatically when they remove liquidity. Liquidity must be managed through the hook's own `addLiquidity` / `removeLiquidity` (which call `unlock` internally) — positions opened through external V4 routers aren't tracked.
+**Reward accumulator.** Rewards (always `currency0`) use the Uniswap V3-style growth pattern. A per-pool `PoolRewards` accumulator tracks cumulative reward-per-unit-liquidity; each tick boundary stores its "outside" value, flipped as swaps cross it; each position checkpoints the inside value it last saw. `distributeReward` folds the arbitrage bid into the accumulator for **whoever is in range now**.
+
+LPs use the standard V4 `PositionManager` (or any V4 router) — no custom entry point. The hook's `before`-hooks maintain accurate per-position reward accounting across liquidity changes: `beforeAdd/RemoveLiquidity` snapshots the current reward growth inside the tick range and settles what the position earned since its last checkpoint. `afterRemoveLiquidity` + `ReturnDelta` pays the accrued reward to the LP atomically on removal by funding the `PoolManager` and returning a negative currency0 delta so V4 credits the caller. A zero-delta removal (no principal change) collects rewards without closing the position.
 
 ### Settler
 
@@ -214,8 +214,9 @@ The 5% operator fee is taken at settle time accrues in the ServiceManager. A `re
    taskManager.challenge(...) on a strictly-better signed order
    --> mark challenged, queue VetoableSlasher requests for the signatory set (executor excluded)
 
-5. LP REWARDS (any later removeLiquidity / claimRewards)
-   hook pays earned() in currency0, automatically on remove
+5. LP REWARDS (any later removeLiquidity via V4 router)
+   hook pays earned() in currency0 automatically via afterRemoveLiquidity + ReturnDelta;
+   a zero-delta poke (liquidityDelta=0) collects rewards without closing the position
 
 6. OPERATOR REWARDS (rewards keeper, periodic)
    serviceManager pushes operator-directed rewards from accrued fees --> operators + stakers

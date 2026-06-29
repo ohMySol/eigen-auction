@@ -14,7 +14,7 @@ EigenAuction is a Uniswap V4 hook that gives liquidity providers back the value 
 - [The problem](#the-problem)
 - [The solution](#the-solution)
   - [What is application-specific sequencing](#what-is-application-specific-sequencing)
-- [Architecture](#architecture)
+- [Architecture & Workflows](#architecture)
 - [Repository layout](#repository-layout)
 - [Quick start](#quick-start)
 - [Tests](#tests)
@@ -79,7 +79,7 @@ Because the operators commit to the batch with a BLS quorum signature *before* i
 
 ## Architecture & Workflows
 
-The system has 3 layers: the actors who interact with the protocol (LPs, traders, searchers, operators), the off-chain stack that runs the per-block auction and submits results and the on-chain contracts that verify and settle atomically. Contracts are splitted on EigenAuction contracts and the EigenLayer infrastructure that handles quorum verification, slashing, and rewards.
+The system has four layers: the actors who interact with the protocol (LPs, traders, searchers, operators), the off-chain stack that runs the per-block auction and submits results, the on-chain EigenAuction contracts that verify and settle atomically, and the EigenLayer infrastructure that handles quorum verification, slashing, and rewards.
 
 Below you can see the full architecture of EigenAuction with on-chain and off-chain components and actors that use the system.
 
@@ -137,7 +137,7 @@ make up                        # start the off-chain services
 
 ```bash
 make anvil-fork                # terminal 1: fork mainnet
-make fund deploy-fork seed     # terminal 2: fund wallets + deploy + seed an LP position
+make fund deploy-fork          # terminal 2: fund wallets + deploy (seed LP via a V4 router/PositionManager)
 make start-server              # searcher-rpc
 make start-operator            # avs-auction operator
 make frontend-dev              # Vite dev server
@@ -146,7 +146,7 @@ make frontend-dev              # Vite dev server
 ---
 
 ## Tests
-> Contracts tests work as expected and they are up to date. Backen tests requires update.
+> Contracts tests work as expected and they are up to date. Backend tests require an update.
 
 ```bash
 make test          # all tests: forge (Solidity) + vitest (TypeScript)
