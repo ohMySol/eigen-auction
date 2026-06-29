@@ -9,23 +9,18 @@ import {DeployCore} from "./base/DeployCore.sol";
 import {ConfigLib, NetworkConfig} from "./libs/ConfigLib.sol";
 import {FaucetToken} from "./helpers/FaucetToken.sol";
 
-/// @dev Minimal ERC20 approve surface for seeding liquidity through the hook.
-interface IERC20Approve {
-    function approve(address spender, uint256 amount) external returns (bool);
-}
-
 /// @title DeployTestnet
 /// @author ohMySol
 /// @notice Public-testnet deployment (e.g. Sepolia). Same protocol deployment as `Deploy`
 /// (via the shared `DeployCore`), but additionally deploys two FaucetTokens for the pool, mints demo
-/// balances, starts the pool at 1:1, and seeds an in-range LP straight through the hook so the venue is
-/// liquid and the deployer shows up on the dashboard with a claimable position.
+/// balances, and starts the pool at 1:1.
 ///
-/// Never uses node cheats — demo balances come from the mintable FaucetTokens, and any wallet can top
-/// up later via `FaucetToken.faucet()`.
+/// Liquidity is seeded off-chain through a standard V4 router / PositionManager (the hook tracks any
+/// position opened that way), not from this script — see the backend tooling. Demo balances come from
+/// the mintable FaucetTokens, and any wallet can top up later via `FaucetToken.faucet()`; no node cheats.
 ///
 /// Required env:
-///   DEPLOYER_PK  — deploys contracts + tokens; AVS owner, pool initialiser, and the seeded LP
+///   DEPLOYER_PK  — deploys contracts + tokens; AVS owner and pool initialiser
 ///   OPERATOR_PK  — the AVS operator that registers into the operator set
 ///
 /// Run: `forge script script/DeployTestnet.s.sol --rpc-url $SEPOLIA_RPC_URL --broadcast`
@@ -34,10 +29,7 @@ contract DeployTestnet is DeployCore {
     /// gap, so the price math is independent of which FaucetToken sorts as currency0.
     uint160 constant START_SQRT_PRICE_X96 = 79228162514264337593543950336;
 
-    // Full usable range for tickSpacing 60, plus a generous seed and mint so the pool is liquid.
-    int24 constant SEED_TICK_LOWER = -887220;
-    int24 constant SEED_TICK_UPPER = 887220;
-    uint128 constant SEED_LIQUIDITY = 100e18;
+    // Demo balance minted to the deployer and operator for each FaucetToken.
     uint256 constant MINT_AMOUNT = 1_000_000e18;
 
     function run() external {
@@ -47,23 +39,19 @@ contract DeployTestnet is DeployCore {
         address deployer = vm.addr(deployerPk);
         address operator = vm.addr(operatorPk);
 
-        // Step 1 — tokens + protocol + pool + seeded LP (deployer == AVS/hook owner and the LP).
+        // Step 1 — tokens + protocol + pool (deployer == AVS/hook owner and pool initialiser).
         vm.startBroadcast(deployerPk);
         (
-            Currency currency0, 
-            Currency currency1, 
-            uint8 decimals0, 
+            Currency currency0,
+            Currency currency1,
+            uint8 decimals0,
             uint8 decimals1
         ) = _resolveTokens(config, deployer, operator);
 
         ProtocolContracts memory protocol = _deployProtocol(config, deployer);
         PoolKey memory key = _poolKey(config, address(protocol.hook), currency0, currency1);
         IPoolManager(config.poolManager).initialize(key, START_SQRT_PRICE_X96);
-
-        // Seed an in-range LP through the hook itself so reward attribution stays intact.
-        IERC20Approve(Currency.unwrap(currency0)).approve(address(protocol.hook), type(uint256).max);
-        IERC20Approve(Currency.unwrap(currency1)).approve(address(protocol.hook), type(uint256).max);
-        protocol.hook.addLiquidity(key, SEED_TICK_LOWER, SEED_TICK_UPPER, SEED_LIQUIDITY);
+        // Liquidity is seeded off-chain via a standard V4 router / PositionManager (see backend tooling).
         vm.stopBroadcast();
 
         // Step 2 — ensure the demo operator is a registered EigenLayer operator. BLS operator-set

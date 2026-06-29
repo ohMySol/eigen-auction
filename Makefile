@@ -8,7 +8,7 @@
 #
 # ── Local mainnet fork (development) ─────────────────────────────────────────────────────
 #   make anvil-fork                       # terminal 1: fork mainnet (chainId 1)
-#   make fund deploy-fork seed            # terminal 2: fund + deploy + seed LP
+#   make fund deploy-fork                 # terminal 2: fund + deploy (seed LP via a V4 router/PositionManager)
 #   docker compose up -d redis
 #   make start-server                     # searcher-rpc
 #   make demo                             # one-shot arb demo
@@ -35,7 +35,7 @@ WETH_BAL := 0x00000000000000000000000000000000000000000000010f0cf064dd59200000
 # 10000 ETH.
 ETH_BAL := 0x21e19e0c9bab2400000
 
-.PHONY: anvil-fork fund deploy-fork deploy-testnet seed start-server start-operator demo demo-full build test frontend-dev frontend-build up
+.PHONY: anvil-fork fund deploy-fork deploy-testnet start-server start-operator demo demo-full build test frontend-dev frontend-build up
 
 ## Start a mainnet fork. --auto-impersonate lets fund targets send from whales without unlocking each.
 anvil-fork:
@@ -75,12 +75,6 @@ deploy-testnet:
 	forge script $(CONTRACTS)/script/DeployTestnet.s.sol \
 		--root $(CONTRACTS) --rpc-url $(SEPOLIA_RPC_URL) --broadcast -vvv
 
-## Seed a claimable in-range LP through the hook (assumes `fund` has run so the deployer holds the
-## pair). The position is attributed to the deployer, so it can claim its LVR rewards in the demo.
-seed:
-	forge script $(CONTRACTS)/script/SeedLiquidity.s.sol \
-		--root $(CONTRACTS) --rpc-url $(RPC_URL) --broadcast -vvv
-
 build:
 	forge build --root $(CONTRACTS)
 
@@ -96,7 +90,7 @@ start-operator:
 demo:
 	npm run demo
 
-## Full narrated end-to-end demo. Prereqs: deploy-fork + seed done, redis + start-server up.
+## Full narrated end-to-end demo. Prereqs: deploy-fork done + LP seeded via a router, redis + start-server up.
 demo-full:
 	npm run demo:full
 
