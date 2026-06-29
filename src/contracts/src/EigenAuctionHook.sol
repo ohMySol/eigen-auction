@@ -12,13 +12,13 @@ import {PoolKey} from "v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {Currency} from "v4-core/types/Currency.sol";
 import {SwapParams, ModifyLiquidityParams} from "v4-core/types/PoolOperation.sol";
-import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/types/BalanceDelta.sol";
+import {BalanceDelta, BalanceDeltaLibrary, toBalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
 import {StateLibrary} from "v4-core/libraries/StateLibrary.sol";
 
 import {IEigenAuctionHook} from "./interfaces/IEigenAuctionHook.sol";
 import {IEigenAuctionServiceManager} from "./interfaces/IEigenAuctionServiceManager.sol";
-import {Position, LiquidityCallback, PositionLib} from "./types/Position.sol";
+import {Position, PositionLib} from "./types/Position.sol";
 import {PoolRewards} from "./types/PoolRewards.sol";
 import {RewardGrowthLib} from "./libraries/RewardGrowthLib.sol";
 import {ErrorsLib} from "./libraries/ErrorsLib.sol";
@@ -30,7 +30,7 @@ import {ConstantsLib} from "./libraries/ConstantsLib.sol";
 /// @notice Uniswap V4 hook that locks each pool to a single Settler and distributes arb-auction
 /// proceeds to in-range LPs.
 ///
-/// @dev 
+/// @dev
 /// Pool lock
 /// ----------
 /// Once `setSettler` is called only the Settler may initiate swaps, and at most once per pool per
@@ -46,8 +46,13 @@ import {ConstantsLib} from "./libraries/ConstantsLib.sol";
 /// `distributeReward`, which folds it into the accumulator for whoever is in range at that moment.
 /// A pre-swap `expectedLiquidity` in hookData lets the hook revert on a JIT add (JIT guard).
 ///
-/// LP positions are managed exclusively through this hook's `addLiquidity`/`removeLiquidity`; the
-/// hook does not track liquidity supplied through external V4 routers.
+/// LP positions
+/// ------------
+/// Liquidity is supplied through any standard V4 router or PositionManager. The hook mirrors each
+/// position in `_beforeAddLiquidity` / `_beforeRemoveLiquidity`, keyed by the position owner V4 sees
+/// (the router/PositionManager) plus the position salt — so each PositionManager NFT maps to its own
+/// reward checkpoint. Accrued rewards are paid out in `_afterRemoveLiquidity` as a currency0 hook
+/// delta that rides back to the LP alongside the withdrawn principal (no separate claim step).
 contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
@@ -74,10 +79,10 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     /// @dev Per-pool V3-style reward accumulator (currency0).
     mapping(PoolId => PoolRewards) private _poolRewards;
 
-    /// @dev positionKey => position. Keyed by `keccak256(poolId, owner, lower, upper, salt)`.
-    /// Tracks how much reward each position has earned over time without paying it out.
-    /// When rewards come in, a global counter grows. Each position checkpoints that counter
-    /// so we can later compute exactly what it earned between its last action and now.
+    /// @dev positionKey => position. Keyed by `keccak256(poolId, owner, lower, upper, salt)` where
+    /// `owner` is the address V4 attributes the position to (the router / PositionManager) and `salt`
+    /// distinguishes positions under that owner. Each entry checkpoints the global reward accumulator
+    /// so the hook can compute exactly what a position earned between its last action and now.
     mapping(bytes32 => Position) private _positions;
 
     /* CONSTRUCTOR */
@@ -96,10 +101,10 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
         return Hooks.Permissions({
             beforeInitialize: false,
             afterInitialize: false,
-            beforeAddLiquidity: false,
+            beforeAddLiquidity: true,
             afterAddLiquidity: false,
-            beforeRemoveLiquidity: false,
-            afterRemoveLiquidity: false,
+            beforeRemoveLiquidity: true,
+            afterRemoveLiquidity: true,
             beforeSwap: true,
             afterSwap: true,
             beforeDonate: false,
@@ -107,7 +112,7 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
             beforeSwapReturnDelta: false,
             afterSwapReturnDelta: false,
             afterAddLiquidityReturnDelta: false,
-            afterRemoveLiquidityReturnDelta: false
+            afterRemoveLiquidityReturnDelta: true
         });
     }
 
@@ -133,122 +138,16 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
     function distributeReward(PoolKey calldata key, uint256 amount) external {
         if (msg.sender != settler) revert ErrorsLib.EigenAuctionHook_OnlySettler();
         if (amount == 0) return;
-        
+
         PoolId poolId = key.toId();
         uint128 liquidity = poolManager.getLiquidity(poolId);
-        
+
         // If no active liquidity, the reward cannot accrue to anyone; the Settler keeps it.
         if (liquidity == 0) return;
-        
+
         _poolRewards[poolId].fold(amount, liquidity);
-        
+
         emit EventsLib.ArbitrageSettled(poolId, msg.sender, amount);
-    }
-
-    /* LP LIQUIDITY */
-
-    /// @inheritdoc IEigenAuctionHook
-    function addLiquidity(PoolKey calldata key, int24 tickLower, int24 tickUpper, uint128 liquidity) external {
-        if (liquidity == 0) revert ErrorsLib.EigenAuctionHook_ZeroLiquidity();
-        poolManager.unlock(
-            abi.encode(
-                LiquidityCallback({
-                    key: key,
-                    lp: msg.sender,
-                    tickLower: tickLower,
-                    tickUpper: tickUpper,
-                    liquidityDelta: int256(uint256(liquidity))
-                })
-            )
-        );
-        emit EventsLib.LiquidityAdded(key.toId(), msg.sender, tickLower, tickUpper, liquidity);
-    }
-
-    /// @inheritdoc IEigenAuctionHook
-    function removeLiquidity(PoolKey calldata key, int24 tickLower, int24 tickUpper, uint128 liquidity) external {
-        if (liquidity == 0) revert ErrorsLib.EigenAuctionHook_ZeroLiquidity();
-        poolManager.unlock(
-            abi.encode(
-                LiquidityCallback({
-                    key: key,
-                    lp: msg.sender,
-                    tickLower: tickLower,
-                    tickUpper: tickUpper,
-                    liquidityDelta: -int256(uint256(liquidity))
-                })
-            )
-        );
-        emit EventsLib.LiquidityRemoved(key.toId(), msg.sender, tickLower, tickUpper, liquidity);
-    }
-
-    /// @notice Pool-manager unlock callback for the hook's own LP add/remove flow.
-    /// @dev V4 skips a hook's own liquidity callbacks on self-calls, so the reward ledger is updated
-    /// inline here, keyed to the real LP rather than the router.
-    /// @param data ABI-encoded `LiquidityCallback` passed through from `addLiquidity`/`removeLiquidity`.
-    function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
-        LiquidityCallback memory cbData = abi.decode(data, (LiquidityCallback));
-        PoolId poolId = cbData.key.toId();
-        bytes32 positionKey = PositionLib.positionKey(
-            poolId, 
-            cbData.lp, 
-            cbData.tickLower, 
-            cbData.tickUpper, 
-            bytes32(0)
-        );
-
-        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
-
-        // Seed reward-outside for boundaries this add will initialize (V3 convention), before adding.
-        if (cbData.liquidityDelta > 0) {
-            _poolRewards[poolId].initializeBoundary(poolManager, poolId, cbData.tickLower, currentTick);
-            _poolRewards[poolId].initializeBoundary(poolManager, poolId, cbData.tickUpper, currentTick);
-        }
-
-        uint256 insideX128 = _poolRewards[poolId].getGrowthInside(currentTick, cbData.tickLower, cbData.tickUpper);
-
-        // Accrue rewards earned so far and re-checkpoint before the liquidity change.
-        _positions[positionKey].settlePosition(insideX128);
-
-        (BalanceDelta delta,) = poolManager.modifyLiquidity(
-            cbData.key,
-            ModifyLiquidityParams({
-                tickLower: cbData.tickLower,
-                tickUpper: cbData.tickUpper,
-                liquidityDelta: cbData.liquidityDelta,
-                salt: bytes32(uint256(uint160(cbData.lp)))
-            }),
-            ""
-        );
-
-        _positions[positionKey].applyLiquidity(cbData.liquidityDelta);
-
-        // Auto-pay accrued rewards on removal so the LP never needs a separate claim step.
-        if (cbData.liquidityDelta < 0) {
-            _payRewards(poolId, positionKey, cbData.key.currency0, cbData.lp);
-        }
-
-        _settlePrincipal(cbData.key.currency0, delta.amount0(), cbData.lp);
-        _settlePrincipal(cbData.key.currency1, delta.amount1(), cbData.lp);
-        return "";
-    }
-
-    /// @inheritdoc IEigenAuctionHook
-    function claimRewards(PoolKey calldata key, int24 tickLower, int24 tickUpper) external {
-        PoolId poolId = key.toId();
-        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
-        bytes32 positionKey = PositionLib.positionKey(
-            poolId, 
-            msg.sender, 
-            tickLower, 
-            tickUpper, 
-            bytes32(0)
-        );
-        
-        uint256 insideX128 = _poolRewards[poolId].getGrowthInside(currentTick, tickLower, tickUpper);
-        
-        _positions[positionKey].settlePosition(insideX128);
-        
-        _payRewards(poolId, positionKey, key.currency0, msg.sender);
     }
 
     /* VIEWS */
@@ -267,13 +166,13 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
         bytes32 salt
     ) external view returns (uint256 amount) {
         PoolId poolId = key.toId();
-        bytes32 positionKey = PositionLib.positionKey(key.toId(), owner_, tickLower, tickUpper, salt);
-        
+        bytes32 positionKey = PositionLib.positionKey(poolId, owner_, tickLower, tickUpper, salt);
+
         Position storage pos = _positions[positionKey];
         (, int24 currentTick,,) = poolManager.getSlot0(poolId);
-        
+
         uint256 insideX128 = _poolRewards[poolId].getGrowthInside(currentTick, tickLower, tickUpper);
-        
+
         amount = pos.owed + RewardGrowthLib.rewardsOf(insideX128, pos.lastGrowthInsideX128, pos.liquidity);
     }
 
@@ -342,33 +241,90 @@ contract EigenAuctionHook is BaseHook, IEigenAuctionHook {
         return (this.afterSwap.selector, 0);
     }
 
-    /* INTERNAL HELPERS */
+    /* LIQUIDITY HOOKS */
 
-    /// @dev Settles a position's principal token deltas against the pool manager during an LP action.
-    /// @param currency The token to settle.
-    /// @param amount Signed delta from `modifyLiquidity`; negative means the LP owes tokens in,
-    /// positive means the hook owes tokens out to the LP.
-    /// @param lp The liquidity provider tokens are pulled from or sent to.
-    function _settlePrincipal(Currency currency, int128 amount, address lp) private {
-        if (amount < 0) {
-            poolManager.sync(currency);
-            IERC20(Currency.unwrap(currency)).safeTransferFrom(lp, address(poolManager), uint256(uint128(-amount)));
-            poolManager.settle();
-        } else if (amount > 0) {
-            poolManager.take(currency, lp, uint256(uint128(amount)));
-        }
+    /// @dev Mirrors a position before V4 adds liquidity. Seeds the outside accumulators for the
+    /// boundaries this add may initialize (must run while their gross liquidity is still zero),
+    /// accrues any rewards earned on the position's existing liquidity, then applies the increase.
+    /// @param sender The position owner V4 sees — the router / PositionManager.
+    /// @param key The pool receiving liquidity.
+    /// @param params The add parameters; `liquidityDelta` is positive here.
+    function _beforeAddLiquidity(
+        address sender,
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata params,
+        bytes calldata
+    ) internal override returns (bytes4) {
+        PoolId poolId = key.toId();
+        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
+
+        // Seed outside accumulators for boundaries this add may initialize — must run before V4
+        // applies the liquidity so the gross-liquidity == 0 check is accurate.
+        _poolRewards[poolId].initializeBoundary(poolManager, poolId, params.tickLower, currentTick);
+        _poolRewards[poolId].initializeBoundary(poolManager, poolId, params.tickUpper, currentTick);
+
+        bytes32 positionKey = PositionLib.positionKey(poolId, sender, params.tickLower, params.tickUpper, params.salt);
+        uint256 insideX128 = _poolRewards[poolId].getGrowthInside(currentTick, params.tickLower, params.tickUpper);
+
+        _positions[positionKey].settlePosition(insideX128);            // accrue on old liquidity, re-checkpoint
+        _positions[positionKey].applyLiquidity(params.liquidityDelta); // then add
+
+        return this.beforeAddLiquidity.selector;
     }
 
-    /// @dev Transfers any settled-but-unpaid rewards for a position directly to the LP. No-op when nothing is owed.
-    /// @param poolId Pool the position belongs to (used only for the emitted event).
-    /// @param positionKey Storage key of the position whose `owed` balance is paid out.
-    /// @param currency0 The reward token (always currency0 of the pool).
-    /// @param lp Recipient of the reward transfer.
-    function _payRewards(PoolId poolId, bytes32 positionKey, Currency currency0, address lp) private {
+    /// @dev Mirrors a position before V4 removes liquidity. Accrues rewards on the pre-removal
+    /// liquidity, then reduces it. The payout itself happens in `_afterRemoveLiquidity`.
+    /// @param sender The position owner V4 sees — the router / PositionManager.
+    /// @param key The pool losing liquidity.
+    /// @param params The remove parameters; `liquidityDelta` is negative (or zero for a claim).
+    function _beforeRemoveLiquidity(
+        address sender,
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata params,
+        bytes calldata
+    ) internal override returns (bytes4) {
+        PoolId poolId = key.toId();
+        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
+
+        bytes32 positionKey = PositionLib.positionKey(poolId, sender, params.tickLower, params.tickUpper, params.salt);
+        uint256 insideX128 = _poolRewards[poolId].getGrowthInside(currentTick, params.tickLower, params.tickUpper);
+
+        _positions[positionKey].settlePosition(insideX128);            // accrue on pre-removal liquidity
+        _positions[positionKey].applyLiquidity(params.liquidityDelta); // then reduce (no-op when zero)
+
+        return this.beforeRemoveLiquidity.selector;
+    }
+
+    /// @dev Pays a position's accrued rewards (currency0) back through the caller. The hook funds the
+    /// debt by settling `owed` currency0 into the pool manager, then returns a negative currency0 hook
+    /// delta; V4 credits that amount to the caller's delta (`callerDelta - hookDelta`), so it rides out
+    /// to the LP alongside the withdrawn principal. The two net to zero for the hook.
+    /// @param sender The position owner V4 sees — the router / PositionManager.
+    /// @param key The pool the position belongs to.
+    /// @param params The remove parameters identifying the position.
+    /// @return The selector and the currency0 hook delta paid to the caller.
+    function _afterRemoveLiquidity(
+        address sender,
+        PoolKey calldata key,
+        ModifyLiquidityParams calldata params,
+        BalanceDelta,
+        BalanceDelta,
+        bytes calldata
+    ) internal override returns (bytes4, BalanceDelta) {
+        PoolId poolId = key.toId();
+        bytes32 positionKey = PositionLib.positionKey(poolId, sender, params.tickLower, params.tickUpper, params.salt);
+
         uint256 owed = _positions[positionKey].owed;
-        if (owed == 0) return;
+        if (owed == 0) return (this.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
         _positions[positionKey].owed = 0;
-        currency0.transfer(lp, owed);
-        emit EventsLib.RewardsClaimed(poolId, lp, owed);
+
+        // Fund the hook's debt for the negative delta returned below.
+        Currency currency0 = key.currency0;
+        poolManager.sync(currency0);
+        IERC20(Currency.unwrap(currency0)).safeTransfer(address(poolManager), owed);
+        poolManager.settle();
+
+        emit EventsLib.RewardsClaimed(poolId, sender, owed);
+        return (this.afterRemoveLiquidity.selector, toBalanceDelta(-int128(int256(owed)), 0));
     }
 }

@@ -21,9 +21,10 @@ import {IEigenAuctionServiceManager} from "./IEigenAuctionServiceManager.sol";
 /// ----------
 /// Rewards (always currency0) are tracked with a V3-style growth accumulator. The Settler transfers
 /// the derived arb bid (and any clearing-price residual) to the hook and calls `distributeReward`,
-/// which folds it into the accumulator for in-range LPs. LPs collect via `claimRewards`, or
-/// automatically when they remove liquidity. Liquidity must be managed through `addLiquidity` /
-/// `removeLiquidity`; positions opened via external V4 routers are not tracked.
+/// which folds it into the accumulator for in-range LPs. Liquidity is supplied through any standard
+/// V4 router or PositionManager; the hook mirrors each position in its before-liquidity callbacks and
+/// pays accrued rewards out in `afterRemoveLiquidity` as a currency0 delta that rides back to the LP
+/// with the withdrawn principal. A zero-liquidity removal can be used to collect rewards in place.
 interface IEigenAuctionHook {
     /// @notice The service manager that authorizes operators and records settlements.
     function avs() external view returns (IEigenAuctionServiceManager);
@@ -56,36 +57,15 @@ interface IEigenAuctionHook {
     /// @param amount Reward amount in currency0.
     function distributeReward(PoolKey calldata key, uint256 amount) external;
 
-    /* LP ACTIONS */
-
-    /// @notice Supplies liquidity to the pool through the hook itself.
-    /// @param key The pool to add liquidity to.
-    /// @param tickLower Lower tick of the position's price range.
-    /// @param tickUpper Upper tick of the position's price range.
-    /// @param liquidity Amount of liquidity units to add.
-    function addLiquidity(PoolKey calldata key, int24 tickLower, int24 tickUpper, uint128 liquidity) external;
-
-    /// @notice Withdraws liquidity previously supplied through `addLiquidity`. Accrued rewards are
-    /// paid out automatically.
-    /// @param key The pool to remove liquidity from.
-    /// @param tickLower Lower tick of the position's price range.
-    /// @param tickUpper Upper tick of the position's price range.
-    /// @param liquidity Amount of liquidity units to remove.
-    function removeLiquidity(PoolKey calldata key, int24 tickLower, int24 tickUpper, uint128 liquidity) external;
-
-    /// @notice Collects accrued rewards for a position without changing its liquidity.
-    /// @param key The pool the position belongs to.
-    /// @param tickLower Lower tick of the position's range.
-    /// @param tickUpper Upper tick of the position's range.
-    function claimRewards(PoolKey calldata key, int24 tickLower, int24 tickUpper) external;
+    /* LP VIEWS */
 
     /// @notice Returns the total currency0 rewards a position has accrued — both already settled
     /// into `owed` and not-yet-checkpointed growth since the last action.
     /// @param key The pool the position belongs to.
-    /// @param owner Address that owns the position.
+    /// @param owner Position owner as V4 attributes it — the router / PositionManager address.
     /// @param tickLower Lower tick of the position's range.
     /// @param tickUpper Upper tick of the position's range.
-    /// @param salt Position differentiator; use `bytes32(0)` for the default single position per range.
+    /// @param salt Position salt under `owner` (the PositionManager's per-NFT salt).
     /// @return amount Total currency0 claimable right now.
     function earned(
         PoolKey calldata key,
@@ -97,10 +77,10 @@ interface IEigenAuctionHook {
 
     /// @notice Returns the liquidity units the hook tracks for a position.
     /// @param key The pool the position belongs to.
-    /// @param owner Address that owns the position.
+    /// @param owner Position owner as V4 attributes it — the router / PositionManager address.
     /// @param tickLower Lower tick of the position's range.
     /// @param tickUpper Upper tick of the position's range.
-    /// @param salt Position differentiator; use `bytes32(0)` for the default single position per range.
+    /// @param salt Position salt under `owner` (the PositionManager's per-NFT salt).
     /// @return Liquidity units attributed to this position.
     function positionLiquidity(
         PoolKey calldata key,
