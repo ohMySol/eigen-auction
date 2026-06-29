@@ -77,14 +77,17 @@ Because the operators commit to the batch with a BLS quorum signature *before* i
 
 ---
 
-## Architecture
+## Architecture & Workflows
 
 The system has 3 layers: the actors who interact with the protocol (LPs, traders, searchers, operators), the off-chain stack that runs the per-block auction and submits results and the on-chain contracts that verify and settle atomically. Contracts are splitted on EigenAuction contracts and the EigenLayer infrastructure that handles quorum verification, slashing, and rewards.
 
 Below you can see the full architecture of EigenAuction with on-chain and off-chain components and actors that use the system.
 
+### Architecture
 ![EigenAuction Architecture](docs/assets/EigenAuctionArchitecture.excalidraw.png)
 
+### Workflows
+![EigenAuction Workflows](docs/assets/EigenAuctionWorkflow.excalidraw.png)
 ---
 
 ## Repository layout
