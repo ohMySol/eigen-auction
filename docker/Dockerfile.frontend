@@ -1,23 +1,26 @@
 # Build the Vite SPA, then serve the static output with nginx.
 #
-# Build-time config: Vite inlines VITE_* at build, so the chain id / RPC / searcher-rpc URL are baked
+# Build-time config: Vite inlines VITE_* at build, so the chain id / RPC / avs-rpc URL are baked
 # in here (pass them as --build-arg). The deployment artifact written by the deploy script is copied
 # into the context so the chain layer can bundle the matching deployments/<chainId>.json.
+# Build deps stay in the build stage; the final image is just nginx + the static bundle.
 
 FROM node:20-alpine AS build
 WORKDIR /app
+RUN corepack enable
 
-# node-gyp needs Python + C build tools (for native modules like utf-8-validate used by ws).
+# node-gyp needs Python + C build tools for native modules pulled in transitively.
 RUN apk add --no-cache python3 make g++
 
-# Install deps (the root package.json holds the frontend deps alongside the backend's).
-# --legacy-peer-deps is needed because the wagmi/viem/vitest peer dep tree contains conflicting
-# picomatch version ranges that npm ci rejects without it.
-COPY package*.json ./
-RUN npm ci --legacy-peer-deps
+# Workspace manifests first for install-layer caching.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/backend/package.json ./packages/backend/
+COPY packages/frontend/package.json ./packages/frontend/
+RUN pnpm install --frozen-lockfile
 
 # Frontend source + the deployment artifacts the chain layer reads at build time.
-COPY src/frontend ./src/frontend
+COPY packages/frontend ./packages/frontend
 COPY deployments ./deployments
 
 ARG VITE_CHAIN_ID=11155111
@@ -26,11 +29,11 @@ ARG VITE_INTENT_URL
 ENV VITE_CHAIN_ID=$VITE_CHAIN_ID \
     VITE_RPC_URL=$VITE_RPC_URL \
     VITE_INTENT_URL=$VITE_INTENT_URL
-RUN npm run frontend:build
-# Vite outputs to src/frontend/dist/ (root is set to src/frontend in vite.config.js).
+RUN pnpm frontend:build
+# Vite outputs to packages/frontend/dist/ (root is set to the package dir in vite.config.js).
 
 FROM nginx:alpine AS serve
-COPY --from=build /app/src/frontend/dist /usr/share/nginx/html
+COPY --from=build /app/packages/frontend/dist /usr/share/nginx/html
 # Single-page app: route every path back to index.html.
 RUN printf 'server {\n  listen 80;\n  root /usr/share/nginx/html;\n  location / { try_files $uri /index.html; }\n}\n' \
     > /etc/nginx/conf.d/default.conf
