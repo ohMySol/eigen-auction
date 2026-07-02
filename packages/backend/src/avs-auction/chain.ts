@@ -2,9 +2,9 @@
 // Reads live in pool-price.ts; this module holds the two state-changing transactions.
 import { createWalletClient, http, erc20Abi, maxUint256, type Hex, type Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { config, poolKey, publicClient, requireOperatorKeys } from "../../shared/config";
-import { auctionServiceManagerAbi, settlerAbi } from "../../shared/abi";
-import type { SwapIntentT, SwapParamsT } from "../../shared/types";
+import { config, poolKey, publicClient, requireOperatorKeys } from "@eigen-auction/shared/config";
+import { auctionServiceManagerAbi, settlerAbi } from "@eigen-auction/shared";
+import type { SwapIntentT, SwapParamsT } from "@eigen-auction/shared";
 
 // A wallet client bound to a private key. chain is null because we target a bare RPC (Anvil/fork)
 // and pass an explicit chainId via the transport rather than a viem chain object.

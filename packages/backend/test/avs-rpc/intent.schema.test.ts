@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseIntentBody } from "../../../backend/searcher-rpc/schemas/intent.schema";
+import { parseIntentBody } from "../../src/avs-rpc/schemas/intent.schema";
 
 const valid = {
     user: "0x0000000000000000000000000000000000000001",

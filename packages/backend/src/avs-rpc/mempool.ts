@@ -1,5 +1,5 @@
 import type Redis from "ioredis";
-import type { SwapIntentT, IntentSource } from "../../shared/types";
+import type { SwapIntentT, IntentSource } from "@eigen-auction/shared";
 
 // One Redis list per pool. Lower-cased so the producer and consumer never disagree on the key.
 const listKey = (poolId: string) => `intents:${poolId.toLowerCase()}`;
@@ -27,7 +27,7 @@ export function deserializeIntent(raw: string): SwapIntentT {
     };
 }
 
-// Redis-backed queue decoupling the two services: searcher-rpc RPUSHes validated intents,
+// Redis-backed queue decoupling the two services: avs-rpc RPUSHes validated intents,
 // avs-auction atomically drains them once per block. Implements IntentSource so the operator
 // loop depends on the structural type, never on this concrete class.
 export class RedisMempool implements IntentSource {

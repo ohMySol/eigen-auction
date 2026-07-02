@@ -1,7 +1,7 @@
 // External (CEX/oracle) reference price for the pool, plus its sqrtPriceX96 encoding.
 // price is denominated as currency1 per currency0 in whole tokens — the human convention. The
 // conversion below folds in token decimals so the result matches the pool's raw-unit sqrtPriceX96.
-import { config } from "../../shared/config";
+import { config } from "@eigen-auction/shared/config";
 
 // Integer square root (Newton's method) so a 33-digit sqrtPriceX96 stays exact — Number math would
 // lose the low ~17 digits.

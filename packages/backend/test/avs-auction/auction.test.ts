@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { priceToSqrtX96 } from "../../../backend/avs-auction/cex-price";
-import { buildArbParams } from "../../../backend/avs-auction/pool-price";
-import { runAuction } from "../../../backend/avs-auction/bid-collector";
+import { priceToSqrtX96 } from "../../src/avs-auction/cex-price";
+import { buildArbParams } from "../../src/avs-auction/pool-price";
+import { runAuction } from "../../src/avs-auction/bid-collector";
 
 describe("priceToSqrtX96", () => {
     const Q96 = 2n ** 96n;

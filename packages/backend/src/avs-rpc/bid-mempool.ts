@@ -1,5 +1,5 @@
 import type Redis from "ioredis";
-import type { SignedBidT, BidSource } from "../../shared/types";
+import type { SignedBidT, BidSource } from "@eigen-auction/shared";
 
 // One Redis list per pool for arb bids, separate from the intent queue.
 const bidKey = (poolId: string) => `bids:${poolId.toLowerCase()}`;
@@ -14,7 +14,7 @@ export function deserializeBid(raw: string): SignedBidT {
     return { ...o, targetBlock: BigInt(o.targetBlock), bidAmount: BigInt(o.bidAmount) };
 }
 
-// Redis-backed bid queue: searcher-rpc RPUSHes validated bids; the operator atomically drains them
+// Redis-backed bid queue: avs-rpc RPUSHes validated bids; the operator atomically drains them
 // each block to run the auction. Implements BidSource so the operator loop depends on the shape.
 export class RedisBidQueue implements BidSource {
     constructor(private readonly redis: Redis, private readonly poolId: string) {}

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { SwapIntentT } from "../../../shared/types";
+import type { SwapIntentT } from "@eigen-auction/shared";
 import { hexBytes, hex, uintString } from "./primitives";
 
 // Wire shape of POST /intent. Validates every field at the boundary, then transforms the

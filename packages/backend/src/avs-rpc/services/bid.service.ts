@@ -1,5 +1,5 @@
 import type { Hex } from "viem";
-import type { SignedBidT } from "../../../shared/types";
+import type { SignedBidT } from "@eigen-auction/shared";
 import { validateBid } from "../verify";
 
 // Collaborators injected so the service stays unit-testable and transport-free.

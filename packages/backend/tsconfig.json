@@ -1,0 +1,23 @@
+{
+  "comment": "Self-contained (no extends) so the standalone `pnpm deploy` image needs no repo-root file. rootDir is two levels up — always a common ancestor of src/ and the bundled @eigen-auction/shared .ts, both in dev (repo root) and in the deployed image (/) — which is what ts-node needs to emit across the package boundary.",
+  "ts-node": {
+    "transpileOnly": true,
+    "comment": "In the `pnpm deploy` image, @eigen-auction/shared is bundled as .ts files INSIDE node_modules. ts-node ignores node_modules by default, so un-ignore just that package (everything else in node_modules is JS and should be loaded by Node directly). Locally shared is symlinked outside node_modules, where this is a harmless no-op.",
+    "ignore": ["/node_modules/(?!@eigen-auction/)"]
+  },
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "noEmit": true,
+    "rootDir": "../.."
+  },
+  "include": ["src", "test"]
+}

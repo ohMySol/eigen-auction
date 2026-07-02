@@ -15,6 +15,6 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
         return;
     }
     // Unexpected (e.g. Redis/RPC failure): log server-side, return an opaque 500.
-    console.error("searcher-rpc unhandled error:", err);
+    console.error("avs-rpc unhandled error:", err);
     res.status(500).json({ ok: false, error: "internal error" });
 }

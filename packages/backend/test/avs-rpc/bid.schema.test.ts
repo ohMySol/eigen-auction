@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseBidBody } from "../../../backend/searcher-rpc/schemas/bid.schema";
+import { parseBidBody } from "../../src/avs-rpc/schemas/bid.schema";
 
 const valid = {
     poolId: "0x" + "11".repeat(32),

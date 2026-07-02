@@ -1,8 +1,8 @@
 // Searcher arb-bid intake and winner election.
-// collectBids drains whatever the searcher-rpc queued for this block; with no bidders the queue is
+// collectBids drains whatever the avs-rpc queued for this block; with no bidders the queue is
 // empty and the designated operator wins at bid 0 — every block still has a winner who can settle.
 import type { Address } from "viem";
-import type { BidSource } from "../../shared/types";
+import type { BidSource } from "@eigen-auction/shared";
 
 // A signed offer to pay for the exclusive right to make the arb swap this block.
 export interface ArbBid {
@@ -21,7 +21,7 @@ export interface AuctionOutcome {
     bidAmount: bigint;
 }
 
-// Drain the block's arb bids from the queue the searcher-rpc fills, mapping each signed bid to the
+// Drain the block's arb bids from the queue the avs-rpc fills, mapping each signed bid to the
 // (bidder, bidAmount) the auction needs.
 export async function collectBids(source: BidSource): Promise<ArbBid[]> {
     const bids = await source.drainBids();

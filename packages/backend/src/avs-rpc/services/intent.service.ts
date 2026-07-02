@@ -1,5 +1,5 @@
 import type { Address, Hex } from "viem";
-import type { SwapIntentT } from "../../../shared/types";
+import type { SwapIntentT } from "@eigen-auction/shared";
 import { validateIntent } from "../verify";
 
 // Collaborators the service needs, injected so it stays unit-testable and free of transport concerns.

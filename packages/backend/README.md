@@ -12,7 +12,7 @@ Two Node.js services that run the off-chain side of the EigenAuction loop.
 ```
 src/backend/
   avs-auction/       Operator node — watches blocks, runs the auction, commits + settles
-  searcher-rpc/      HTTP API — accepts signed user intents and searcher arb bids
+  avs-rpc/      HTTP API — accepts signed user intents and searcher arb bids
   shared/            Config, ABIs, types shared by both services
 ```
 
@@ -73,7 +73,7 @@ Errors in a single round are logged and swallowed so the loop survives transient
 
 ---
 
-## searcher-rpc — HTTP API
+## avs-rpc — HTTP API
 
 Express server that accepts two types of off-chain submissions and queues them in Redis for the operator to drain each block.
 
@@ -158,21 +158,21 @@ Both queues are drained (LPOP/LRANGE + DEL) atomically each block. Undrained ent
 | `SETTLER_CALLER_PK` | avs-auction | Calls `Settler.settle()` — must equal `OPERATOR_PK` |
 | `PRICE_SOURCE` | avs-auction | `fixed` (reads `FIXED_PRICE`) or future oracle |
 | `FIXED_PRICE` | avs-auction | Human price (currency1 per currency0) used as CEX reference |
-| `INTENT_PORT` | searcher-rpc | HTTP port (default 8088) |
+| `INTENT_PORT` | avs-rpc | HTTP port (default 8088) |
 
 ---
 
 ## Running
 
 ```bash
-# Start searcher-rpc only
+# Start avs-rpc only
 npm run start-server
 
 # Start operator only
 npm run start-operator
 
 # Both via Docker (recommended for testnet)
-docker compose up avs-auction searcher-rpc redis
+docker compose up avs-auction avs-rpc redis
 ```
 
 The Docker images are built from `docker/Dockerfile.backend`. Both services run from the same image with different `command` overrides in `docker-compose.yml`.

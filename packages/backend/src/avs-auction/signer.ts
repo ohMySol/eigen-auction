@@ -2,7 +2,7 @@
 // verifies on-chain: each operator signs the EIP-191-prefixed keccak of the packed tuple, and a
 // quorum of >= threshold unique signatures is required to commit.
 import { keccak256, encodePacked, type Account, type Hex } from "viem";
-import type { WinnerTupleT } from "../../shared/types";
+import type { WinnerTupleT } from "@eigen-auction/shared";
 
 // keccak256(abi.encodePacked(poolId, targetBlock, winner, bidAmount)).
 // Packed types and order are (bytes32, uint256, address, uint256) — must byte-match the contract.

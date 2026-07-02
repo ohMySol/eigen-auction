@@ -1,9 +1,9 @@
 import express from "express";
 import Redis from "ioredis";
 import type { Address } from "viem";
-import { config, poolKey, publicClient } from "../../shared/config";
-import { getPoolId } from "../../shared/poolId";
-import { settlerAbi } from "../../shared/abi";
+import { config, poolKey, publicClient } from "@eigen-auction/shared/config";
+import { getPoolId } from "@eigen-auction/shared";
+import { settlerAbi } from "@eigen-auction/shared";
 import { RedisMempool } from "./mempool";
 import { RedisBidQueue } from "./bid-mempool";
 import { IntentService } from "./services/intent.service";
@@ -48,7 +48,7 @@ async function main(): Promise<void> {
     app.use(errorHandler);
 
     const server = app.listen(config.intentPort, () =>
-        console.log(`searcher-rpc listening on :${config.intentPort} (pool ${poolId})`),
+        console.log(`avs-rpc listening on :${config.intentPort} (pool ${poolId})`),
     );
 
     // Close Redis and the HTTP listener cleanly on container stop so no intent is half-written.
@@ -62,6 +62,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-    console.error("searcher-rpc failed to start:", err);
+    console.error("avs-rpc failed to start:", err);
     process.exit(1);
 });

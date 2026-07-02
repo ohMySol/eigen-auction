@@ -1,8 +1,8 @@
 // On-chain pool state reader (via StateView) plus the top-of-block arb sizing helper.
 import type { Hex } from "viem";
-import { config, publicClient } from "../../shared/config";
-import { stateViewAbi } from "../../shared/abi";
-import type { SwapParamsT } from "../../shared/types";
+import { config, publicClient } from "@eigen-auction/shared/config";
+import { stateViewAbi } from "@eigen-auction/shared";
+import type { SwapParamsT } from "@eigen-auction/shared";
 
 // Current pool price (sqrtPriceX96) and tick for a pool.
 export async function getSlot0(poolId: Hex): Promise<{ sqrtPriceX96: bigint; tick: number }> {

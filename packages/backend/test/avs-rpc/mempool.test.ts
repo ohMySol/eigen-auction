@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { serializeIntent, deserializeIntent } from "../../../backend/searcher-rpc/mempool";
-import type { SwapIntentT } from "../../../shared/types";
+import { serializeIntent, deserializeIntent } from "../../src/avs-rpc/mempool";
+import type { SwapIntentT } from "@eigen-auction/shared";
 
 describe("intent (de)serialization", () => {
     it("round-trips bigints through JSON without loss", () => {

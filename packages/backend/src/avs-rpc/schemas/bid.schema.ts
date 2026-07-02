@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { SignedBidT } from "../../../shared/types";
+import type { SignedBidT } from "@eigen-auction/shared";
 import { hexBytes, hex, uintString } from "./primitives";
 
 // Wire shape of POST /bid: a searcher's signed offer for the block's arb right.

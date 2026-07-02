@@ -1,6 +1,6 @@
 import { recoverTypedDataAddress, recoverMessageAddress, type Address, type Hex } from "viem";
-import type { SwapIntentT, SignedBidT } from "../../shared/types";
-import { INTENT_TYPES, intentDomain, bidHash } from "../../shared/sign";
+import type { SwapIntentT, SignedBidT } from "@eigen-auction/shared";
+import { INTENT_TYPES, intentDomain, bidHash } from "@eigen-auction/shared";
 
 // Thrown when an intent is well-formed JSON but fails a business rule (wrong pool, expired,
 // bad signature, used nonce). Distinct from infra errors so the API maps it to 400, not 500.

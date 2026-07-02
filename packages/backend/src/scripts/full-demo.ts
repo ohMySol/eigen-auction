@@ -4,7 +4,7 @@
 // Ends with a with-vs-without-auction comparison.
 //
 // Prereqs: make anvil-fork; make fund deploy-fork seed; docker compose up -d redis;
-//          make start-server (searcher-rpc on :INTENT_PORT). Then: npm run demo:full
+//          make start-server (avs-rpc on :INTENT_PORT). Then: npm run demo:full
 //
 // .env: FIXED_PRICE set off the pool start (e.g. 0.000476 ~ 2100 USDC/WETH) so an arb exists.
 import "dotenv/config";
@@ -20,18 +20,18 @@ import {
     type Address, 
     type Hex,
 } from "viem";
-import { config, poolKey, requireOperatorKeys } from "../shared/config";
-import { getPoolId } from "../shared/poolId";
-import { signIntent, signBid } from "../shared/sign";
-import { settlerAbi, auctionServiceManagerAbi, eigenAuctionHookAbi } from "../shared/abi";
-import { publicClient } from "../shared/config";
-import { RedisMempool } from "../backend/searcher-rpc/mempool";
-import { RedisBidQueue } from "../backend/searcher-rpc/bid-mempool";
-import { getSlot0, buildArbParams } from "../backend/avs-auction/pool-price";
-import { externalPrice, priceToSqrtX96 } from "../backend/avs-auction/cex-price";
-import { runAuction, collectBids } from "../backend/avs-auction/bid-collector";
-import { collectSignatures } from "../backend/avs-auction/signer";
-import { commitWinner, settleAs } from "../backend/avs-auction/chain";
+import { config, poolKey, requireOperatorKeys } from "@eigen-auction/shared/config";
+import { getPoolId } from "@eigen-auction/shared";
+import { signIntent, signBid } from "@eigen-auction/shared";
+import { settlerAbi, auctionServiceManagerAbi, eigenAuctionHookAbi } from "@eigen-auction/shared";
+import { publicClient } from "@eigen-auction/shared/config";
+import { RedisMempool } from "../avs-rpc/mempool";
+import { RedisBidQueue } from "../avs-rpc/bid-mempool";
+import { getSlot0, buildArbParams } from "../avs-auction/pool-price";
+import { externalPrice, priceToSqrtX96 } from "../avs-auction/cex-price";
+import { runAuction, collectBids } from "../avs-auction/bid-collector";
+import { collectSignatures } from "../avs-auction/signer";
+import { commitWinner, settleAs } from "../avs-auction/chain";
 
 // Three competing searchers (anvil accounts #2-#4); bids are in currency0 units (scales with decimals0
 // so it works for both USDC/6-decimal forks and 18-decimal testnet tokens).
@@ -124,7 +124,7 @@ async function main() {
         signature: await signIntent(user, config.settler, config.chainId, unsigned) 
     });
    
-    log("=== 2. User intent submitted to searcher-rpc (POST /intent) ===\n");
+    log("=== 2. User intent submitted to avs-rpc (POST /intent) ===\n");
 
     // ---- 3. Searchers compete for the arb right (POST /bid) ----
     const targetBlock = (await publicClient.getBlockNumber()) + 2n; // commit at +1, settle at +2

@@ -4,11 +4,11 @@
 import "dotenv/config";
 import Redis from "ioredis";
 import { privateKeyToAccount } from "viem/accounts";
-import { config, poolKey, publicClient, requireOperatorKeys } from "../../shared/config";
-import { getPoolId } from "../../shared/poolId";
-import { RedisMempool } from "../searcher-rpc/mempool";
-import { RedisBidQueue } from "../searcher-rpc/bid-mempool";
-import type { IntentSource, BidSource } from "../../shared/types";
+import { config, poolKey, publicClient, requireOperatorKeys } from "@eigen-auction/shared/config";
+import { getPoolId } from "@eigen-auction/shared";
+import { RedisMempool } from "../avs-rpc/mempool";
+import { RedisBidQueue } from "../avs-rpc/bid-mempool";
+import type { IntentSource, BidSource } from "@eigen-auction/shared";
 import { externalPrice, priceToSqrtX96 } from "./cex-price";
 import { getSlot0, buildArbParams } from "./pool-price";
 import { collectBids, runAuction } from "./bid-collector";
