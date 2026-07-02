@@ -44,12 +44,12 @@ export interface SignedBidT {
 }
 
 // Structural source of arb bids for a block, mirroring IntentSource. Lets the operator loop depend
-// on the shape, not searcher-rpc's concrete Redis queue.
+// on the shape, not avs-rpc's concrete Redis queue.
 export interface BidSource {
     drainBids(): Promise<SignedBidT[]>;
 }
 
-// Structural type so avs-auction never imports searcher-rpc's concrete mempool.
+// Structural type so avs-auction never imports avs-rpc's concrete mempool.
 export interface IntentSource { 
     drain(): Promise<SwapIntentT[]>; 
 }

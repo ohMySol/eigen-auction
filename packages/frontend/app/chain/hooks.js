@@ -207,7 +207,7 @@ const SWAP_INTENT_TYPES = {
   ],
 };
 
-// Sign a SwapIntent with the connected wallet and POST it to the searcher-rpc /intent endpoint.
+// Sign a SwapIntent with the connected wallet and POST it to the avs-rpc /intent endpoint.
 // `onSigned` is called after the wallet signature resolves (before the HTTP POST), so the caller
 // can advance its UI state (e.g. "signing" → "filling") while the POST is in flight.
 export function useSubmitIntent() {

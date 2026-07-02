@@ -85,7 +85,7 @@ All contract reads are gated on `IS_LIVE` and refetch every 12 seconds (one bloc
 
 **`useFaucet()`** — calls `FaucetToken.faucet()` for both pool tokens. Visible only when `IS_TESTNET`.
 
-**`useSubmitIntent()`** — EIP-712 sign + POST to `searcher-rpc`:
+**`useSubmitIntent()`** — EIP-712 sign + POST to `avs-rpc`:
 1. Generates a random 64-bit nonce (CSPRNG)
 2. Signs `SwapIntent` with `signTypedData` (MetaMask popup — no gas)
 3. POSTs the serialised intent to `INTENT_URL/intent`
@@ -125,7 +125,7 @@ Pending rewards read from `hook.earned()` live. Rewards are auto-paid on remove 
 
 1. User enters swap direction and amount
 2. `useSubmitIntent` signs EIP-712 intent (wallet popup, zero gas)
-3. Intent is queued in searcher-rpc → operator bundles it with the next arb settlement
+3. Intent is queued in avs-rpc → operator bundles it with the next arb settlement
 4. User sees their swap filled at the post-arb price in the next block
 
 ### Pool Stats (`viewPool.jsx`)

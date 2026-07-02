@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getPoolId } from "../../shared/poolId";
+import { getPoolId } from "../poolId";
 
 describe("getPoolId Tests", () => {
     it("getPoolId should return bytes32 hash of the pool key", () => {
