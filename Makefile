@@ -10,7 +10,7 @@
 #   make anvil-fork                       # terminal 1: fork mainnet (chainId 1)
 #   make fund deploy-fork                 # terminal 2: fund + deploy (seed LP via a V4 router/PositionManager)
 #   docker compose up -d redis
-#   make start-server                     # searcher-rpc
+#   make start-server                     # avs-rpc
 #   make demo                             # one-shot arb demo
 #   make demo-full                        # full narrated demo (bids → auction → LP claim)
 #   make frontend-dev                     # Vite dev server with hot-reload
@@ -79,28 +79,28 @@ build:
 	forge build --root $(CONTRACTS)
 
 test:
-	npm run test
+	pnpm test
 
 start-server:
-	npm run start-server
+	pnpm start-server
 
 start-operator:
-	npm run start-operator
+	pnpm start-operator
 
 demo:
-	npm run demo
+	pnpm demo
 
 ## Full narrated end-to-end demo. Prereqs: deploy-fork done + LP seeded via a router, redis + start-server up.
 demo-full:
-	npm run demo:full
+	pnpm demo:full
 
 ## Run the frontend in dev mode with hot-reload (reads deployments/<CHAIN_ID>.json live).
 frontend-dev:
-	npm run frontend
+	pnpm frontend
 
-## Build the production frontend bundle into src/frontend/dist/.
+## Build the production frontend bundle into packages/frontend/dist/.
 frontend-build:
-	npm run frontend:build
+	pnpm frontend:build
 
 ## Start the full docker stack (all 4 services). Prereqs: deploy-testnet done, .env populated.
 ## Open http://localhost:8080 after this completes.

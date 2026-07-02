@@ -1,55 +1,20 @@
 {
-  "name": "avs-lvr-auction-hook",
-  "version": "1.0.0",
-  "description": "",
-  "homepage": "https://github.com/ohMySol/mev-clawback-hook#readme",
-  "bugs": {
-    "url": "https://github.com/ohMySol/mev-clawback-hook/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ohMySol/mev-clawback-hook.git"
-  },
-  "license": "ISC",
-  "author": "",
-  "type": "commonjs",
-  "main": "index.ts",
+  "name": "eigen-auction",
+  "private": true,
   "scripts": {
+    "start-operator": "pnpm -F @eigen-auction/backend start-operator",
+    "start-server": "pnpm -F @eigen-auction/backend start-server",
+    "demo": "pnpm -F @eigen-auction/backend demo",
+    "demo:full": "pnpm -F @eigen-auction/backend demo:full",
+    "frontend": "pnpm -F @eigen-auction/frontend dev",
+    "frontend:build": "pnpm -F @eigen-auction/frontend build",
+    "frontend:preview": "pnpm -F @eigen-auction/frontend preview",
+    "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "start-operator": "ts-node src/backend/avs-auction/index.ts",
-    "dev-operator": "ts-node-dev --respawn --transpile-only src/backend/avs-auction/index.ts",
-    "start-server": "ts-node src/backend/searcher-rpc/server.ts",
-    "dev-server": "ts-node-dev --respawn --transpile-only src/backend/searcher-rpc/server.ts",
-    "demo": "ts-node src/scripts/fork-demo.ts",
-    "demo:full": "ts-node src/scripts/full-demo.ts",
-    "frontend": "vite --config src/frontend/vite.config.js",
-    "frontend:build": "vite build --config src/frontend/vite.config.js",
-    "frontend:preview": "vite preview --config src/frontend/vite.config.js --host"
-  },
-  "dependencies": {
-    "@tanstack/react-query": "^5.62.7",
-    "@types/node": "^25.9.1",
-    "@wagmi/core": "^2.16.3",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "ioredis": "^5.11.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "ts-node": "^10.9.2",
-    "ts-node-dev": "^2.0.0",
-    "tsconfig-paths": "^4.2.0",
-    "typescript": "^6.0.3",
-    "viem": "^2.51.3",
-    "wagmi": "^2.14.6",
-    "ws": "^8.21.0",
-    "zod": "^3.25.76"
+    "test:watch": "vitest"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6",
-    "@types/ws": "^8.18.1",
-    "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.5",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.8"
   }
 }
