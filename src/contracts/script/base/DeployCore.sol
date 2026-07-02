@@ -11,6 +11,10 @@ import {IDelegationManager} from "eigenlayer-contracts/src/contracts/interfaces/
 import {IPermissionController} from "eigenlayer-contracts/src/contracts/interfaces/IPermissionController.sol";
 import {ISlashingRegistryCoordinator} from "eigenlayer-middleware/src/interfaces/ISlashingRegistryCoordinator.sol";
 import {IStakeRegistry} from "eigenlayer-middleware/src/interfaces/IStakeRegistry.sol";
+import {VetoableSlasher} from "eigenlayer-middleware/src/slashers/VetoableSlasher.sol";
+import {IVetoableSlasher} from "eigenlayer-middleware/src/interfaces/IVetoableSlasher.sol";
+import {IStrategy} from "eigenlayer-contracts/src/contracts/interfaces/IStrategy.sol";
+import {IStrategyManager} from "eigenlayer-contracts/src/contracts/interfaces/IStrategyManager.sol";
 
 import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
@@ -20,15 +24,10 @@ import {IHooks} from "v4-core/interfaces/IHooks.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {HookMiner} from "v4-hooks-public/src/utils/HookMiner.sol";
 
-import {IStrategy} from "eigenlayer-contracts/src/contracts/interfaces/IStrategy.sol";
-import {IStrategyManager} from "eigenlayer-contracts/src/contracts/interfaces/IStrategyManager.sol";
-
 import {EigenAuctionServiceManager} from "../../src/EigenAuctionServiceManager.sol";
 import {EigenAuctionHook} from "../../src/EigenAuctionHook.sol";
 import {Settler} from "../../src/Settler.sol";
 import {EigenAuctionTaskManager} from "../../src/EigenAuctionTaskManager.sol";
-import {VetoableSlasher} from "eigenlayer-middleware/src/slashers/VetoableSlasher.sol";
-import {IVetoableSlasher} from "eigenlayer-middleware/src/interfaces/IVetoableSlasher.sol";
 import {ConstantsLib} from "../../src/libraries/ConstantsLib.sol";
 import {ConfigLib, NetworkConfig, Deployment} from "../libs/ConfigLib.sol";
 import {DeployMiddleware} from "./DeployMiddleware.sol";
@@ -36,9 +35,8 @@ import {DeployMiddleware} from "./DeployMiddleware.sol";
 /// @title DeployCore
 /// @author ohMySol
 /// @notice Shared, config-driven deployment logic for the AVS-secured LVR auction.
-/// Concrete scripts (`Deploy`, `DeployTestnet`) inherit this and differ only
-/// in how the token pair is sourced and whether demo liquidity is seeded — every address comes from
-/// `config/networks/<chainId>.json`, so there are no chain-specific branches here.
+/// Concrete scripts (`Deploy`, `DeployTestnet`) inherit this and differ only in how the token pair is sourced 
+/// and whether demo liquidity is seeded — every address comes from `config/networks/<chainId>.json`, so there are no chain-specific branches here.
 ///
 /// Broadcast scoping is the caller's responsibility: wrap `_deployProtocol`/pool-init in the deployer's
 /// `vm.startBroadcast(deployerPk)` and `_registerOperator` in the operator's broadcast.

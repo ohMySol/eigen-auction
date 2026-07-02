@@ -92,26 +92,29 @@ Below you can see the full architecture of EigenAuction with on-chain and off-ch
 
 ## Repository layout
 
+The off-chain code is a pnpm-workspaces monorepo under `packages/`; the Solidity project stays a
+standalone Foundry root under `src/contracts/`.
+
 ```
-src/
-  contracts/                 Solidity (Foundry) — see src/contracts/README.md
-    src/
-      EigenAuctionHook.sol            V4 hook: pool lock + LP reward accumulator
-      EigenAuctionServiceManager.sol  EigenLayer AVS identity, fee custody, rewards
-      EigenAuctionTaskManager.sol     BLS commit, fraud challenge, slashing
-      Settler.sol                     Atomic batch settlement (arb + uniform-price intents)
-      interfaces/                     Public interfaces
-      types/                          ToBOrder, SwapIntent, Commitment, Position, PoolRewards
-      libraries/                      Errors, Events, Constants, reward-growth math
-    script/                           Deploy + middleware wiring (Foundry)
-    test/                        
+src/contracts/               Solidity (Foundry) — see src/contracts/README.md
+  src/
+    EigenAuctionHook.sol            V4 hook: pool lock + LP reward accumulator
+    EigenAuctionServiceManager.sol  EigenLayer AVS identity, fee custody, rewards
+    EigenAuctionTaskManager.sol     BLS commit, fraud challenge, slashing
+    Settler.sol                     Atomic batch settlement (arb + uniform-price intents)
+    interfaces/                     Public interfaces
+    types/                          ToBOrder, SwapIntent, Commitment, Position, PoolRewards
+    libraries/                      Errors, Events, Constants, reward-growth math
+  script/                           Deploy + middleware wiring (Foundry)
+  test/
 
-  backend/
-    avs-auction/             Operator node — per-block auction loop (being updated for BLS)
-    searcher-rpc/            HTTP API — signed intent + bid intake
-    shared/                  Config, ABIs, types
-
-  frontend/
+packages/                    pnpm workspaces (off-chain)
+  shared/                    @eigen-auction/shared — config, ABIs, types (consumed by backend)
+  backend/                   @eigen-auction/backend
+    src/avs-auction/         Operator node — per-block auction loop (being updated for BLS)
+    src/avs-rpc/             HTTP API — signed intent + bid intake
+    src/scripts/             Fork/demo drivers
+  frontend/                  @eigen-auction/frontend
     app/                     React SPA — LP dashboard, trade view, pool stats
       chain/                 wagmi hooks, deployment artifact loader, V4 math
 
@@ -138,7 +141,7 @@ make up                        # start the off-chain services
 ```bash
 make anvil-fork                # terminal 1: fork mainnet
 make fund deploy-fork          # terminal 2: fund wallets + deploy (seed LP via a V4 router/PositionManager)
-make start-server              # searcher-rpc
+make start-server              # avs-rpc
 make start-operator            # avs-auction operator
 make frontend-dev              # Vite dev server
 ```
@@ -169,6 +172,6 @@ Everyone is welcome. You'll be especially useful if you know:
 ## Documentation
 
 - [src/contracts/README.md](src/contracts/README.md)
-- [src/backend/README.md](src/backend/README.md)
-- [src/frontend/README.md](src/frontend/README.md)
+- [packages/backend/README.md](packages/backend/README.md)
+- [packages/frontend/README.md](packages/frontend/README.md)
 </content>
