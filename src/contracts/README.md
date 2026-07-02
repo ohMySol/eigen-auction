@@ -1,6 +1,6 @@
 # EigenAuction Contracts
 
-The on-chain part of EigenAuction. Four contracts run a per-block, BLS-secured arbitrage auction on a Uniswap V4 pool and return the proceeds to liquidity providers. A stake-weighted quorum of EigenLayer operators attests each block's result off-chain; the chain verifies that attestation, settles the batch atomically, and slashes operators who attest a worse-than-honest result.
+The on-chain part of EigenAuction. Four contracts run a per-block, BLS-secured arbitrage auction on a Uniswap V4 pool and return the proceeds to liquidity providers. A stake-weighted quorum of EigenLayer operators attests each block's result off-chain, the chain verifies that attestation, settles the batch atomically, and slashes operators who attest a fraud result (means better auction result exists in that block).
 
 ---
 
