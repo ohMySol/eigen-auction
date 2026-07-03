@@ -15,14 +15,14 @@ RUN apk add --no-cache python3 make g++
 # Workspace manifests first so the install layer is cached until a manifest changes.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
 COPY packages/shared/package.json ./packages/shared/
-COPY packages/backend/package.json ./packages/backend/
-COPY packages/frontend/package.json ./packages/frontend/
+COPY apps/backend/package.json ./apps/backend/
+COPY apps/frontend/package.json ./apps/frontend/
 RUN pnpm install --frozen-lockfile
 
 # Sources the backend needs at runtime (shared is bundled into the deploy output).
 COPY tsconfig.base.json ./
 COPY packages/shared ./packages/shared
-COPY packages/backend ./packages/backend
+COPY apps/backend ./apps/backend
 
 # Prune to just the backend closure. --prod drops devDeps (ts-node-dev); the runtime ts-node +
 # typescript are declared as prod dependencies, so they are included.

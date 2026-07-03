@@ -172,6 +172,6 @@ Everyone is welcome. You'll be especially useful if you know:
 ## Documentation
 
 - [src/contracts/README.md](src/contracts/README.md)
-- [packages/backend/README.md](packages/backend/README.md)
-- [packages/frontend/README.md](packages/frontend/README.md)
+- [apps/backend/README.md](apps/backend/README.md)
+- [apps/frontend/README.md](apps/frontend/README.md)
 </content>

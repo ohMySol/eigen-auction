@@ -15,12 +15,12 @@ RUN apk add --no-cache python3 make g++
 # Workspace manifests first for install-layer caching.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
 COPY packages/shared/package.json ./packages/shared/
-COPY packages/backend/package.json ./packages/backend/
-COPY packages/frontend/package.json ./packages/frontend/
+COPY apps/backend/package.json ./apps/backend/
+COPY apps/frontend/package.json ./apps/frontend/
 RUN pnpm install --frozen-lockfile
 
 # Frontend source + the deployment artifacts the chain layer reads at build time.
-COPY packages/frontend ./packages/frontend
+COPY apps/frontend ./apps/frontend
 COPY deployments ./deployments
 
 ARG VITE_CHAIN_ID=11155111
@@ -30,10 +30,10 @@ ENV VITE_CHAIN_ID=$VITE_CHAIN_ID \
     VITE_RPC_URL=$VITE_RPC_URL \
     VITE_INTENT_URL=$VITE_INTENT_URL
 RUN pnpm frontend:build
-# Vite outputs to packages/frontend/dist/ (root is set to the package dir in vite.config.js).
+# Vite outputs to apps/frontend/dist/ (root is set to the package dir in vite.config.js).
 
 FROM nginx:alpine AS serve
-COPY --from=build /app/packages/frontend/dist /usr/share/nginx/html
+COPY --from=build /app/apps/frontend/dist /usr/share/nginx/html
 # Single-page app: route every path back to index.html.
 RUN printf 'server {\n  listen 80;\n  root /usr/share/nginx/html;\n  location / { try_files $uri /index.html; }\n}\n' \
     > /etc/nginx/conf.d/default.conf

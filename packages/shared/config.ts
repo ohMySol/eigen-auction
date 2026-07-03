@@ -40,7 +40,7 @@ const chainId = Number(env("CHAIN_ID"));
 
 // DEPLOYMENTS_DIR lets tests point at a committed fixture; production defaults to the repo-root
 // deployments/ the deploy script writes. Anchored to this file (packages/shared/), not the cwd, so
-// it resolves the same whether a workspace script runs from packages/backend or the repo root.
+// it resolves the same whether a workspace script runs from apps/backend or the repo root.
 function loadDeployment(): DeploymentArtifact {
     const dir = process.env.DEPLOYMENTS_DIR ?? resolve(__dirname, "../..", "deployments");
     const file = resolve(dir, `${chainId}.json`);

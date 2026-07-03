@@ -98,7 +98,7 @@ demo-full:
 frontend-dev:
 	pnpm frontend
 
-## Build the production frontend bundle into packages/frontend/dist/.
+## Build the production frontend bundle into apps/frontend/dist/.
 frontend-build:
 	pnpm frontend:build
 
