@@ -9,14 +9,17 @@ export interface PoolKeyT {
 }
 
 export interface SwapIntentT {
-    user: Address; 
+    user: Address;
     poolId: Hex;
     zeroForOne: boolean;
-    amountIn: bigint; 
-    minAmountOut: bigint; 
-    nonce: bigint; 
-    deadline: bigint; 
-    signature: Hex;   
+    // Settle from the user's internal Settler balance instead of ERC20 transfers. Part of the signed
+    // terms and the EIP-712 struct hash — must mirror the Solidity SwapIntent field order.
+    useInternal: boolean;
+    amountIn: bigint;
+    minAmountOut: bigint;
+    nonce: bigint;
+    deadline: bigint;
+    signature: Hex;
 }
 
 export interface SwapParamsT {

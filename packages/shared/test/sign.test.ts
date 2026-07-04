@@ -12,9 +12,10 @@ describe("signIntent Tests", () => {
             settler, 
             31337,
             {
-                user: account.address, 
+                user: account.address,
                 poolId: ("0x" + "11".repeat(32)) as `0x${string}`,
-                zeroForOne: true, 
+                zeroForOne: true,
+                useInternal: false,
                 amountIn: 10n ** 18n,
                 minAmountOut: 1n, 
                 nonce: 7n, 
@@ -26,7 +27,7 @@ describe("signIntent Tests", () => {
 
     it("signIntent uses the exact contract domain + type", () => {
         expect(intentDomain(settler, 31337).name).toBe("EigenAuction Settler");
-        expect(INTENT_TYPES.SwapIntent.length).toBe(7);
+        expect(INTENT_TYPES.SwapIntent.length).toBe(8);
     });
 
 })

@@ -4,11 +4,12 @@ import { SwapIntentT } from "./types";
 // The schema for the intent signature. It mirrors the fields on the SwapIntent Solidity struct.
 export const INTENT_TYPES = {
     SwapIntent: [
-        { name: "user", type: "address" }, 
+        { name: "user", type: "address" },
         { name: "poolId", type: "bytes32" },
-        { name: "zeroForOne", type: "bool" }, 
+        { name: "zeroForOne", type: "bool" },
+        { name: "useInternal", type: "bool" },
         { name: "amountIn", type: "uint128" },
-        { name: "minAmountOut", type: "uint128" }, 
+        { name: "minAmountOut", type: "uint128" },
         { name: "nonce", type: "uint64" },
         { name: "deadline", type: "uint64" },
   ],

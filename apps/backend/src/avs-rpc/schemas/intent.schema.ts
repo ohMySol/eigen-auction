@@ -8,6 +8,7 @@ export const intentSchema = z.object({
     user: hexBytes(20),
     poolId: hexBytes(32),
     zeroForOne: z.boolean(),
+    useInternal: z.boolean(),
     amountIn: uintString,
     minAmountOut: uintString,
     nonce: uintString,

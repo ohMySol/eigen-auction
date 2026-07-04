@@ -106,11 +106,12 @@ async function main() {
 
     // ---- 2. A user intent arrives (Step 2 of settlement) ----
     const amountIn = 100n * 10n ** BigInt(config.decimals0);
-    const unsigned = { 
-        user: user.address, 
-        poolId, 
-        zeroForOne: true, 
-        amountIn, 
+    const unsigned = {
+        user: user.address,
+        poolId,
+        zeroForOne: true,
+        useInternal: false,
+        amountIn,
         minAmountOut: 0n,
         nonce: BigInt(Date.now()), 
         deadline: BigInt(Math.floor(Date.now() / 1000) + 600) 

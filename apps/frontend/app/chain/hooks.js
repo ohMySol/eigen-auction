@@ -200,6 +200,7 @@ const SWAP_INTENT_TYPES = {
     { name: "user", type: "address" },
     { name: "poolId", type: "bytes32" },
     { name: "zeroForOne", type: "bool" },
+    { name: "useInternal", type: "bool" },
     { name: "amountIn", type: "uint128" },
     { name: "minAmountOut", type: "uint128" },
     { name: "nonce", type: "uint64" },
@@ -230,7 +231,10 @@ export function useSubmitIntent() {
       verifyingContract: DEPLOYMENT.settler,
     };
 
-    const message = { user: account, poolId: POOL_ID, zeroForOne, amountIn, minAmountOut, nonce, deadline };
+    // The UI settles via ERC20 transfers, never from an internal Settler balance. Part of the signed
+    // terms, so it must appear in both the EIP-712 message and the POST body.
+    const useInternal = false;
+    const message = { user: account, poolId: POOL_ID, zeroForOne, useInternal, amountIn, minAmountOut, nonce, deadline };
 
     const signature = await signTypedDataAsync({
       domain, types: SWAP_INTENT_TYPES, primaryType: "SwapIntent", message,
@@ -246,6 +250,7 @@ export function useSubmitIntent() {
           user: account,
           poolId: POOL_ID,
           zeroForOne,
+          useInternal,
           amountIn: amountIn.toString(),
           minAmountOut: minAmountOut.toString(),
           nonce: nonce.toString(),

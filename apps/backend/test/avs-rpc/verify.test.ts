@@ -14,6 +14,7 @@ const base = {
     user: account.address,
     poolId,
     zeroForOne: true,
+    useInternal: false,
     amountIn: 10n ** 18n,
     minAmountOut: 1n,
     nonce: 7n,

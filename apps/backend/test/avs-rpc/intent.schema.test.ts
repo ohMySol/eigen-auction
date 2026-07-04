@@ -5,6 +5,7 @@ const valid = {
     user: "0x0000000000000000000000000000000000000001",
     poolId: "0x" + "11".repeat(32),
     zeroForOne: true,
+    useInternal: false,
     amountIn: "1000000000000000000",
     minAmountOut: "1",
     nonce: "7",
