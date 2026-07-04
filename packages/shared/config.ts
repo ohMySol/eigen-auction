@@ -2,7 +2,7 @@ import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createPublicClient, http, type Address, type Hex } from "viem";
-import type { PoolKeyT } from "./types";
+import type { PoolKeyT } from "./src/types";
 
 // Trim because the Makefile's `include .env` can leave trailing whitespace on a value when the
 // .env line has an inline comment (Make, unlike dotenv, does not strip it).
@@ -21,9 +21,21 @@ interface DeploymentArtifact {
     chainId: number;
     poolManager: Address;
     stateView: Address;
-    auctionServiceManager: Address;
+    serviceManager: Address;
     hook: Address;
     settler: Address;
+    // AVS/middleware + EL-core addresses. The Go aggregator/operator read these straight from the raw
+    // JSON; TS surfaces only the subset it uses in `config` below.
+    taskManager: Address;
+    registryCoordinator: Address;
+    stakeRegistry: Address;
+    blsApkRegistry: Address;
+    operatorStateRetriever: Address;
+    delegationManager: Address;
+    allocationManager: Address;
+    avsDirectory: Address;
+    stakeStrategy: Address;
+    quorumNumbers: number;
     pool: {
         currency0: Address;
         currency1: Address;
@@ -59,7 +71,10 @@ export const config = {
     redisUrl: env("REDIS_URL"),
     stateView: deployment.stateView,
     settler: deployment.settler,
-    asm: deployment.auctionServiceManager,
+    serviceManager: deployment.serviceManager,
+    // Commit target for the BLS flow (getCommitment reads, settle gating). The Go aggregator submits
+    // commitWinner here; TS reads commitments/settles against it.
+    taskManager: deployment.taskManager,
     hook: deployment.hook,
     intentPort: Number(optEnv("INTENT_PORT") ?? "8088"),
     operatorPk: optEnv("OPERATOR_PK") as `0x${string}` | undefined,

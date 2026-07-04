@@ -51,6 +51,10 @@ abstract contract DeployCore is DeployMiddleware {
         EigenAuctionTaskManager taskManager;
         VetoableSlasher vetoableSlasher;
         ISlashingRegistryCoordinator registryCoordinator;
+        // Registry sub-addresses the off-chain aggregator binds to (BLS pubkeys, stake, sig indices).
+        address stakeRegistry;
+        address blsApkRegistry;
+        address operatorStateRetriever;
     }
 
     /// @dev Hook permission flags this hook encodes in its address.
@@ -70,6 +74,9 @@ abstract contract DeployCore is DeployMiddleware {
         // 1. BLS middleware stack (coordinator proxy live but not yet initialized).
         RegistryStack memory rs = _deployRegistryStack(config, owner);
         protocol.registryCoordinator = ISlashingRegistryCoordinator(address(rs.coordinator));
+        protocol.stakeRegistry = address(rs.stakeRegistry);
+        protocol.blsApkRegistry = address(rs.blsApkRegistry);
+        protocol.operatorStateRetriever = address(rs.operatorStateRetriever);
 
         // 2. AVS wired to the coordinator + stake registry; coordinator init needs the AVS address.
         protocol.avs = _deployAvs(config, owner, address(rs.coordinator), address(rs.stakeRegistry));
@@ -158,7 +165,19 @@ abstract contract DeployCore is DeployMiddleware {
             chainId: block.chainid,
             poolManager: config.poolManager,
             stateView: config.stateView,
-            auctionServiceManager: address(protocol.avs),
+            serviceManager: address(protocol.avs),
+            taskManager: address(protocol.taskManager),
+            registryCoordinator: address(protocol.registryCoordinator),
+            stakeRegistry: protocol.stakeRegistry,
+            blsApkRegistry: protocol.blsApkRegistry,
+            operatorStateRetriever: protocol.operatorStateRetriever,
+            // EL core is referenced by address (not deployed by us) but the aggregator needs it for
+            // operator-set registration, so it is echoed into the artifact from the network config.
+            delegationManager: config.delegationManager,
+            allocationManager: config.allocationManager,
+            avsDirectory: config.avsDirectory,
+            stakeStrategy: config.stakeStrategy,
+            quorumNumbers: ConstantsLib.OPERATOR_SET_ID,
             hook: address(protocol.hook),
             settler: address(protocol.settler),
             currency0: Currency.unwrap(key.currency0),

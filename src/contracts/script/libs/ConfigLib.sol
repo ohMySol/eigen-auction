@@ -37,7 +37,17 @@ struct Deployment {
     uint256 chainId;
     address poolManager;
     address stateView;
-    address auctionServiceManager;
+    address serviceManager;
+    address taskManager;
+    address registryCoordinator;
+    address stakeRegistry;
+    address blsApkRegistry; 
+    address operatorStateRetriever;
+    address delegationManager; 
+    address allocationManager;
+    address avsDirectory; 
+    address stakeStrategy;
+    uint256 quorumNumbers;
     address hook;
     address settler;
     address currency0;
@@ -106,9 +116,19 @@ library ConfigLib {
         deployment.chainId = chainId;
         deployment.poolManager = json.readAddress(".poolManager");
         deployment.stateView = json.readAddress(".stateView");
-        deployment.auctionServiceManager = json.readAddress(".auctionServiceManager");
+        deployment.serviceManager = json.readAddress(".serviceManager");
         deployment.hook = json.readAddress(".hook");
         deployment.settler = json.readAddress(".settler");
+        deployment.taskManager = json.readAddress(".taskManager");
+        deployment.registryCoordinator = json.readAddress(".registryCoordinator");
+        deployment.stakeRegistry = json.readAddress(".stakeRegistry");
+        deployment.blsApkRegistry = json.readAddress(".blsApkRegistry");
+        deployment.operatorStateRetriever = json.readAddress(".operatorStateRetriever");
+        deployment.delegationManager = json.readAddress(".delegationManager");
+        deployment.allocationManager = json.readAddress(".allocationManager");
+        deployment.avsDirectory = json.readAddress(".avsDirectory");
+        deployment.stakeStrategy = json.readAddress(".stakeStrategy");
+        deployment.quorumNumbers = json.readUint(".quorumNumbers");
         deployment.currency0 = json.readAddress(".pool.currency0");
         deployment.currency1 = json.readAddress(".pool.currency1");
         deployment.currency0Decimals = uint8(json.readUint(".pool.currency0Decimals"));
@@ -124,9 +144,21 @@ library ConfigLib {
         vm.serializeUint(obj, "chainId", deployment.chainId);
         vm.serializeAddress(obj, "poolManager", deployment.poolManager);
         vm.serializeAddress(obj, "stateView", deployment.stateView);
-        vm.serializeAddress(obj, "auctionServiceManager", deployment.auctionServiceManager);
+        vm.serializeAddress(obj, "serviceManager", deployment.serviceManager);
         vm.serializeAddress(obj, "hook", deployment.hook);
         vm.serializeAddress(obj, "settler", deployment.settler);
+
+        // AVS/middleware + EL-core addresses the off-chain aggregator and operator client bind to.
+        vm.serializeAddress(obj, "taskManager", deployment.taskManager);
+        vm.serializeAddress(obj, "registryCoordinator", deployment.registryCoordinator);
+        vm.serializeAddress(obj, "stakeRegistry", deployment.stakeRegistry);
+        vm.serializeAddress(obj, "blsApkRegistry", deployment.blsApkRegistry);
+        vm.serializeAddress(obj, "operatorStateRetriever", deployment.operatorStateRetriever);
+        vm.serializeAddress(obj, "delegationManager", deployment.delegationManager);
+        vm.serializeAddress(obj, "allocationManager", deployment.allocationManager);
+        vm.serializeAddress(obj, "avsDirectory", deployment.avsDirectory);
+        vm.serializeAddress(obj, "stakeStrategy", deployment.stakeStrategy);
+        vm.serializeUint(obj, "quorumNumbers", deployment.quorumNumbers);
 
         // Nested "pool" object, mirroring config/networks and the artifact schema.
         string memory poolObj = "pool";
