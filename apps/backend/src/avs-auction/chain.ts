@@ -23,7 +23,7 @@ export async function commitWinner(
 ): Promise<Hex> {
     const { operatorPk } = requireOperatorKeys();
     const hash = await walletFor(operatorPk).writeContract({
-        address: config.asm,
+        address: config.serviceManager,
         abi: auctionServiceManagerAbi,
         functionName: "commitWinner",
         args: [poolId, targetBlock, winner, bidAmount, signatures],

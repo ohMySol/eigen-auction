@@ -20,9 +20,22 @@ export interface SwapIntentT {
 }
 
 export interface SwapParamsT {
-    zeroForOne: boolean; 
-    amountSpecified: bigint; 
+    zeroForOne: boolean;
+    amountSpecified: bigint;
     sqrtPriceLimitX96: bigint;
+}
+
+// A searcher's signed top-of-block arb order — mirrors the Solidity `ToBOrder` field-for-field
+// (src/contracts/src/types/ToBOrder.sol). `signature` is excluded from the struct hash.
+export interface ToBOrderT {
+    searcher: Address;
+    poolId: Hex;
+    zeroForOne: boolean;
+    useInternal: boolean;
+    quantityIn: bigint;
+    quantityOut: bigint;
+    validForBlock: bigint;
+    signature: Hex;
 }
 
 export interface WinnerTupleT {
