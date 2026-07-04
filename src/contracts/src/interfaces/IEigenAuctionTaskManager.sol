@@ -61,14 +61,18 @@ interface IEigenAuctionTaskManager is ICommitmentReader {
     /// @notice Sets the VetoableSlasher this contract queues slashing into.
     /// Pass `address(0)` to disable slashing without removing the strategies config.
     /// @dev Only the coordinator owner may call this.
-    /// @param newVetoableSlasher New VetoableSlasher address (or zero to disable).
+    /// @param newVetoableSlasher New VetoableSlasher address (or zero to disable slashing).
     function setVetoableSlasher(IVetoableSlasher newVetoableSlasher) external;
 
     /// @notice Updates the strategies and per-strategy wad slashed on a fault.
     /// @dev Only the coordinator owner may call this. Both arrays must be non-empty / non-zero.
     /// @param newStrategies New strategy set (non-empty).
-    /// @param newWadToSlash New per-strategy slash fraction in wad (non-zero).
+    /// @param newWadToSlash New per-strategy slash fraction in wad (non-zero e.g., 1e18 = 100%).
     function setSlashingConfig(IStrategy[] calldata newStrategies, uint256 newWadToSlash) external;
+
+    /// @notice Sets the Settler whose EIP-712 domain verifies challenged order signatures.
+    /// @param newSettler Address of the deployed `Settler` contract.
+    function setSettler(address newSettler) external;
 
     /* COMMIT */
 

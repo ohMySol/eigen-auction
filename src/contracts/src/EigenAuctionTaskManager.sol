@@ -107,22 +107,17 @@ contract EigenAuctionTaskManager is BLSSignatureChecker, IEigenAuctionTaskManage
         _setThreshold(newThresholdBps);
     }
 
-    /// @notice Sets the VetoableSlasher requests are queued into. address(0) disables slashing
-    /// (challenge still records the fraud).
-    /// @param newVetoableSlasher New VetoableSlasher address, or zero to disable slashing.
+    /// @inheritdoc IEigenAuctionTaskManager
     function setVetoableSlasher(IVetoableSlasher newVetoableSlasher) external onlyCoordinatorOwner {
         vetoableSlasher = newVetoableSlasher;
     }
 
-    /// @notice Updates the strategies and per-strategy wad slashed on a fault.
-    /// @param newStrategies New strategy set (non-empty).
-    /// @param newWadToSlash New per-strategy slash fraction in wad (non-zero, 1e18 = 100%).
+    /// @inheritdoc IEigenAuctionTaskManager
     function setSlashingConfig(IStrategy[] calldata newStrategies, uint256 newWadToSlash) external onlyCoordinatorOwner {
         _setSlashingConfig(newStrategies, newWadToSlash);
     }
 
-    /// @notice Sets the Settler whose EIP-712 domain verifies challenged order signatures.
-    /// @param newSettler Address of the deployed `Settler` contract.
+    /// @inheritdoc IEigenAuctionTaskManager
     function setSettler(address newSettler) external onlyCoordinatorOwner {
         settler = newSettler;
     }
