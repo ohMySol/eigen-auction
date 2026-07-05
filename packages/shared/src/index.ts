@@ -7,3 +7,4 @@ export * from "./abi";
 export * from "./poolId";
 export * from "./sign";
 export * from "./resultHash";
+export * from "./auction";

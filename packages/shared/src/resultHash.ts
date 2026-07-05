@@ -77,6 +77,18 @@ export function intentStructHash(i: IntentTermsT): Hex {
     );
 }
 
+// The tuple the quorum BLS-signs, matching EigenAuctionTaskManager.commitWinner:
+//   msgHash = keccak256(abi.encode(poolId, targetBlock, resultHash, executor))
+// Binding the executor into the signed hash is what makes the random executor draw trustless.
+export function msgHash(poolId: Hex, targetBlock: bigint, resultHash: Hex, executor: Hex): Hex {
+    return keccak256(
+        encodeAbiParameters(
+            [{ type: "bytes32" }, { type: "uint256" }, { type: "bytes32" }, { type: "address" }],
+            [poolId, targetBlock, resultHash, executor],
+        ),
+    );
+}
+
 // The per-block commitment the quorum attests, mirroring Settler.computeResultHash exactly:
 //   arbOrderHash = hasArb ? toBStructHash(arb) : bytes32(0)
 //   intentsRoot  = keccak256(abi.encode(bytes32[] intentHashes))

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toBStructHash, computeResultHash, type IntentTermsT } from "../src/resultHash";
+import { toBStructHash, computeResultHash, msgHash, type IntentTermsT } from "../src/resultHash";
 import type { ToBOrderT } from "../src/types";
 
 // Golden vectors shared with src/contracts/test/unit/ResultHashVectors.t.sol. The Solidity side
@@ -59,6 +59,13 @@ describe("resultHash reference matches Solidity", () => {
     it("computeResultHash with no arb (all-zero order hashes to bytes32(0))", () => {
         expect(computeResultHash(emptyArb, PRICE, intents)).toBe(
             "0x7c8574d6b61317609623f598d388490de3f68f37cdd8ff1494c6ec4a27472cb8",
+        );
+    });
+
+    it("msgHash (the tuple operators BLS-sign)", () => {
+        const resultWithArb = computeResultHash(arb, PRICE, intents);
+        expect(msgHash(POOL_ID, 12345n, resultWithArb, "0x00000000000000000000000000000000000000e0")).toBe(
+            "0x7a1f4129018aaa5892805e2a99113cd3e2582e74cfe1fc3d50787229449f10f2",
         );
     });
 });

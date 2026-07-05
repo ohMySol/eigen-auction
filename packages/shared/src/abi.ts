@@ -19,6 +19,26 @@ export const settlerAbi = [
     outputs: [{ type: "bool" }] },
 ] as const;
 
+// The deployed EigenAuctionTaskManager read surface used off-chain. `commitWinner`/`challenge` carry
+// the large NonSignerStakesAndSignature/BN254 tuples and are called only from the Go aggregator (bound
+// via abigen from the compiled artifact), so they are deliberately NOT transcribed here — only the
+// commitment read + event the TS side consumes.
+export const taskManagerAbi = [
+  { type: "function", name: "getCommitment", stateMutability: "view", inputs: [
+      { name: "poolId", type: "bytes32" }, { name: "targetBlock", type: "uint256" }],
+    outputs: [{ name: "", type: "tuple", components: [
+      { name: "resultHash", type: "bytes32" }, { name: "hashOfNonSigners", type: "bytes32" },
+      { name: "executor", type: "address" }, { name: "exists", type: "bool" },
+      { name: "challenged", type: "bool" }] }] },
+  { type: "event", name: "WinnerCommitted", inputs: [
+      { name: "poolId", type: "bytes32", indexed: true },
+      { name: "targetBlock", type: "uint256", indexed: true },
+      { name: "executor", type: "address", indexed: true },
+      { name: "resultHash", type: "bytes32", indexed: false }] },
+] as const;
+
+// DEPRECATED: legacy AuctionServiceManager surface (ECDSA winner/bidAmount + EIP-191 bids). Replaced
+// by taskManagerAbi + the BLS commit path; removed when the §4.2 app rewiring drops the old settle/commit.
 export const auctionServiceManagerAbi = [
   { type: "function", name: "commitWinner", stateMutability: "nonpayable", inputs: [
       { name: "poolId", type: "bytes32" }, { name: "targetBlock", type: "uint256" },
