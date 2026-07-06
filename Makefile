@@ -35,7 +35,7 @@ WETH_BAL := 0x00000000000000000000000000000000000000000000010f0cf064dd59200000
 # 10000 ETH.
 ETH_BAL := 0x21e19e0c9bab2400000
 
-.PHONY: anvil-fork fund deploy-fork deploy-testnet start-server start-operator demo demo-full build test frontend-dev frontend-build up
+.PHONY: anvil-fork fund deploy-fork deploy-testnet start-server start-operator demo demo-full build test avs-test avs-integration frontend-dev frontend-build up
 
 ## Start a mainnet fork. --auto-impersonate lets fund targets send from whales without unlocking each.
 anvil-fork:
@@ -80,6 +80,16 @@ build:
 
 test:
 	pnpm test
+
+## Fast, infra-free Go unit tests for the AVS core (consensus, chain, feed, operator).
+avs-test:
+	cd avs && go test ./...
+
+## Tier-2 harness: cross-check the Go core against the DEPLOYED Settler on the running fork.
+## Prereqs: `make anvil-fork` (terminal 1) + `make deploy-fork` (terminal 2) done.
+avs-integration:
+	cd avs && DEPLOYMENTS_DIR=$(PWD)/deployments CHAIN_ID=$(CHAIN_ID) RPC_URL=$(RPC_URL) \
+		go test -tags integration -run Deployed -v ./internal/chain/
 
 start-server:
 	pnpm start-server
