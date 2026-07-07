@@ -37,8 +37,9 @@ import (
 	"github.com/ohMySol/eigen-auction/avs/internal/chaincfg"
 )
 
-// The deployed operator set is quorum 0 only; the signed stake must reach this fraction to commit.
-var quorumNumbers = types.QuorumNums{0}
+// The signed stake must reach this fraction of the quorum's total to commit. The quorum id itself is
+// read from the deployment (dep.QuorumNumbers) so it always matches what operators sign and register
+// against — a hardcode here would silently break commitWinner if the deployed operator-set id differs.
 var quorumThresholds = types.QuorumThresholdPercentages{67}
 
 const taskTimeout = 12 * time.Second // the auction window: how long to collect signatures per block
@@ -60,14 +61,15 @@ func main() {
 	auth, err := bind.NewKeyedTransactorWithChainID(commitKey, new(big.Int).SetUint64(chainID))
 	must(err, "build transactor")
 
+	quorumNums := types.QuorumNums{types.QuorumNum(dep.QuorumNumbers)}
 	blsService := buildBlsAggService(ctx, dep, mustEnv("RPC_URL"), mustEnv("WS_URL"))
 	rounds := agg.NewRounds()
 
 	// Reader: on each aggregation, build the NSS and commit.
-	go commitLoop(ctx, blsService, rounds, cl, auth)
+	go commitLoop(ctx, blsService, rounds, cl, auth, quorumNums)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/submit", submitHandler(ctx, blsService, rounds))
+	mux.HandleFunc("/submit", submitHandler(ctx, blsService, rounds, quorumNums))
 	srv := &http.Server{Addr: mustEnv("LISTEN_ADDR"), Handler: mux}
 	go func() {
 		<-ctx.Done()
@@ -81,7 +83,7 @@ func main() {
 
 // submitHandler ingests one operator SignedResponse: it opens the blsagg task on first sight of a
 // (poolId, targetBlock) round, then feeds the signature in.
-func submitHandler(ctx context.Context, svc *blsagg.BlsAggregatorService, rounds *agg.Rounds) http.HandlerFunc {
+func submitHandler(ctx context.Context, svc *blsagg.BlsAggregatorService, rounds *agg.Rounds, quorumNums types.QuorumNums) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var sr attest.SignedResponse
 		if err := json.NewDecoder(r.Body).Decode(&sr); err != nil {
@@ -90,7 +92,7 @@ func submitHandler(ctx context.Context, svc *blsagg.BlsAggregatorService, rounds
 		}
 		idx, isNew := rounds.Track(sr)
 		if isNew {
-			meta := blsagg.NewTaskMetadata(idx, sr.ReferenceBlockNumber, quorumNumbers, quorumThresholds, taskTimeout)
+			meta := blsagg.NewTaskMetadata(idx, sr.ReferenceBlockNumber, quorumNums, quorumThresholds, taskTimeout)
 			if err := svc.InitializeNewTask(meta); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -106,7 +108,7 @@ func submitHandler(ctx context.Context, svc *blsagg.BlsAggregatorService, rounds
 	}
 }
 
-func commitLoop(ctx context.Context, svc *blsagg.BlsAggregatorService, rounds *agg.Rounds, cl *chain.Client, auth *bind.TransactOpts) {
+func commitLoop(ctx context.Context, svc *blsagg.BlsAggregatorService, rounds *agg.Rounds, cl *chain.Client, auth *bind.TransactOpts, quorumNums types.QuorumNums) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -123,7 +125,7 @@ func commitLoop(ctx context.Context, svc *blsagg.BlsAggregatorService, rounds *a
 			}
 			nss := agg.NonSignerStakesAndSignature(resp)
 			tx, err := cl.TaskManager.CommitWinner(auth, rd.PoolID, new(big.Int).SetUint64(rd.TargetBlock),
-				rd.ResultHash, rd.Executor, rd.ReferenceBlock, quorumBytes(), nss)
+				rd.ResultHash, rd.Executor, rd.ReferenceBlock, quorumBytes(quorumNums), nss)
 			if err != nil {
 				log.Printf("block %d: commitWinner: %v", rd.TargetBlock, err)
 				continue
@@ -163,9 +165,9 @@ func buildBlsAggService(ctx context.Context, dep *chaincfg.Deployment, rpcURL, w
 	return blsagg.NewBlsAggregatorService(avsReg, hashFn, logger)
 }
 
-func quorumBytes() []byte {
-	b := make([]byte, len(quorumNumbers))
-	for i, q := range quorumNumbers {
+func quorumBytes(quorumNums types.QuorumNums) []byte {
+	b := make([]byte, len(quorumNums))
+	for i, q := range quorumNums {
 		b[i] = byte(q)
 	}
 	return b
