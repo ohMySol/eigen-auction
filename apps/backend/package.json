@@ -9,6 +9,7 @@
     "dev-server": "ts-node-dev --respawn --transpile-only src/avs-rpc/server.ts",
     "demo": "ts-node src/scripts/fork-demo.ts",
     "demo:full": "ts-node src/scripts/full-demo.ts",
+    "post-batch": "ts-node src/scripts/post-batch.ts",
     "typecheck": "tsc"
   },
   "dependencies": {

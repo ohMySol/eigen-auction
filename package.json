@@ -6,6 +6,7 @@
     "start-server": "pnpm -F @eigen-auction/backend start-server",
     "demo": "pnpm -F @eigen-auction/backend demo",
     "demo:full": "pnpm -F @eigen-auction/backend demo:full",
+    "post-batch": "pnpm -F @eigen-auction/backend post-batch",
     "frontend": "pnpm -F @eigen-auction/frontend dev",
     "frontend:build": "pnpm -F @eigen-auction/frontend build",
     "frontend:preview": "pnpm -F @eigen-auction/frontend preview",

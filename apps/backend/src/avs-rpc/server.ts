@@ -6,8 +6,10 @@ import { getPoolId } from "@eigen-auction/shared";
 import { settlerAbi } from "@eigen-auction/shared";
 import { RedisMempool } from "./mempool";
 import { RedisBidQueue } from "./bid-mempool";
+import { RedisOrderStore } from "./order-mempool";
 import { IntentService } from "./services/intent.service";
 import { BidService } from "./services/bid.service";
+import { OrderService } from "./services/order.service";
 import { buildRouter } from "./routes";
 import { errorHandler } from "./middleware/error";
 
@@ -19,6 +21,7 @@ async function main(): Promise<void> {
     const poolId = getPoolId(poolKey);
     const mempool = new RedisMempool(redis, poolId);
     const bidQueue = new RedisBidQueue(redis, poolId);
+    const orderStore = new RedisOrderStore(redis, poolId);
 
     // Live nonce-bitmap read against the Settler, injected into the service + status endpoint.
     const isNonceUsed = (user: Address, nonce: bigint): Promise<boolean> =>
@@ -42,9 +45,32 @@ async function main(): Promise<void> {
         addBid: (bid) => bidQueue.addBid(bid),
     });
 
+    const orderService = new OrderService({
+        settler: config.settler,
+        chainId: config.chainId,
+        expectedPoolId: poolId,
+        addOrder: (order) => orderStore.addOrder(order),
+    });
+
     const app = express();
     app.use(express.json());
-    app.use(buildRouter({ intentService, bidService, isNonceUsed }));
+    app.use(
+        buildRouter({
+            intentService,
+            bidService,
+            orderService,
+            auction: {
+                orders: () => orderStore.all(),
+                intents: () => mempool.all(),
+                // The relay stamps one clearing price per block (§2.2b). The demo uses the configured
+                // fixed price; a live price feed would replace this getter.
+                humanPrice: () => config.fixedPrice,
+                decimals0: config.decimals0,
+                decimals1: config.decimals1,
+            },
+            isNonceUsed,
+        }),
+    );
     app.use(errorHandler);
 
     const server = app.listen(config.intentPort, () =>

@@ -3,14 +3,19 @@ import { type Address } from "viem";
 import { healthController } from "../controllers/health.controller";
 import { makeIntentController } from "../controllers/intent.controller";
 import { makeBidController } from "../controllers/bid.controller";
+import { makeOrderController } from "../controllers/order.controller";
+import { makeAuctionController, type AuctionControllerDeps } from "../controllers/auction.controller";
 import { makeStatusController } from "../controllers/status.controller";
 import type { IntentService } from "../services/intent.service";
 import type { BidService } from "../services/bid.service";
+import type { OrderService } from "../services/order.service";
 
 // Wires HTTP routes to their controllers. New endpoints slot in here without touching the bootstrap.
 export function buildRouter(deps: {
     intentService: IntentService;
     bidService: BidService;
+    orderService: OrderService;
+    auction: AuctionControllerDeps;
     isNonceUsed: (user: Address, nonce: bigint) => Promise<boolean>;
 }): Router {
     const router = Router();
@@ -18,6 +23,8 @@ export function buildRouter(deps: {
     router.get("/health", healthController);
     router.post("/intent", makeIntentController(deps.intentService));
     router.post("/bid", makeBidController(deps.bidService));
+    router.post("/order", makeOrderController(deps.orderService));
+    router.get("/auction/:block", makeAuctionController(deps.auction));
     router.get("/status", makeStatusController(deps.isNonceUsed));
 
     return router;

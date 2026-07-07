@@ -46,4 +46,11 @@ export class RedisMempool implements IntentSource {
         const items = (res?.[0]?.[1] as string[]) ?? [];
         return items.map(deserializeIntent);
     }
+
+    // Non-draining read for the seal endpoint: every operator must see the same pending intents for a
+    // block, so the relay serves them without removing them (unlike drain, used by the legacy node).
+    async all(): Promise<SwapIntentT[]> {
+        const items = await this.redis.lrange(listKey(this.poolId), 0, -1);
+        return items.map(deserializeIntent);
+    }
 }
