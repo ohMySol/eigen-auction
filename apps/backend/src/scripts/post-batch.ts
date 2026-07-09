@@ -16,7 +16,7 @@ import { clearingPriceX128 } from "../avs-rpc/seal";
 
 // Three competing searchers (anvil accounts #2-#4). Each offers to pay the same currency0 but demands a
 // different amount of currency1 out — the one leaving the most LP surplus wins under auction rule A.
-const SEARCHERS: Hex[] = [
+export const SEARCHERS: Hex[] = [
     "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a",
     "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6",
     "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a",
@@ -24,10 +24,9 @@ const SEARCHERS: Hex[] = [
 // Surplus each searcher leaves for LPs, in basis points of the fair output. Higher = more competitive.
 const SURPLUS_BPS = [100n, 200n, 500n];
 
-// Must match the operator's settleBlockOffset so the order's validForBlock lands on the block the
-// operator seals (operator processes target = head + 2).
-const SETTLE_OFFSET = 2n;
-const Q128 = 1n << 128n;
+// Must match the operator's targetOffset so the order's validForBlock lands on the block the operator
+// seals and the commit+settle mine into (operator processes target = head + 1).
+const SETTLE_OFFSET = 1n;
 const unit0 = 10n ** BigInt(config.decimals0);
 
 async function post(path: string, body: unknown): Promise<void> {
@@ -39,9 +38,10 @@ async function post(path: string, body: unknown): Promise<void> {
     if (!res.ok) throw new Error(`${path} -> ${res.status} ${await res.text()}`);
 }
 
-async function main(): Promise<void> {
+// Sign the competing searcher orders + a user intent for `targetBlock` and POST them to the relay.
+// Exported so the drive-round orchestrator can reuse it.
+export async function postBatch(targetBlock: bigint): Promise<void> {
     const poolId = getPoolId(poolKey);
-    const targetBlock = (await publicClient.getBlockNumber()) + SETTLE_OFFSET;
     const price = clearingPriceX128(config.fixedPrice, config.decimals0, config.decimals1);
 
     // Fair currency1 output for the searcher's currency0 input, at the stamped clearing price.
@@ -95,11 +95,19 @@ async function main(): Promise<void> {
         signature: await signIntent(user, config.settler, config.chainId, intent),
     });
     console.log(`  intent ${user.address}  amountIn=${amountIn}`);
-
-    console.log(`\nposted. Mine ${SETTLE_OFFSET} block(s) so the operator seals /auction/${targetBlock}.`);
+    console.log(`  posted batch for block ${targetBlock}`);
 }
 
-main().catch((err) => {
-    console.error(err);
-    process.exit(1);
-});
+async function main(): Promise<void> {
+    const targetBlock = (await publicClient.getBlockNumber()) + SETTLE_OFFSET;
+    await postBatch(targetBlock);
+    console.log(`\nMine so the operator seals /auction/${targetBlock} — or use \`make drive-round\` to orchestrate the whole round.`);
+}
+
+// Only run standalone; drive-round imports postBatch without triggering this.
+if (require.main === module) {
+    main().catch((err) => {
+        console.error(err);
+        process.exit(1);
+    });
+}

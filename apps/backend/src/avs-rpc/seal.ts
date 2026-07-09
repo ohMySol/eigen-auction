@@ -33,26 +33,37 @@ export interface SealedSetWire {
     intents: IntentWire[];
 }
 
-// FROZEN clearing-price derivation (§2.2b) — the single consensus input with no on-chain formula, so
+// Why a discount is needed: `settle` fills every batch order at ONE uniform clearing price, but sources
+// the net token flow from the AMM — which charges the 0.3% pool fee and moves price as it trades. If the
+// clearing price were exactly mid, the users' input would only equal the mid-value of their output, so it
+// would NOT cover what the pool charged to produce that output, and settle would revert insolvent
+// (Settler_BatchInsolvent). Pricing slightly BELOW mid makes each fill collect a little more input than
+// the AMM's cost; that surplus covers the fee + slippage and is left to LPs, keeping the batch solvent.
+// This is the demo-simplified form: a full spec would apply the buffer only in the net-imbalance
+// direction and could net opposing intents so only the residual pays the fee.
+const SOLVENCY_DISCOUNT_BPS = 200n; // 2% below mid — covers the 0.3% pool fee + batch slippage + arb price impact
+
+// FROZEN clearing-price derivation — the single consensus input with no on-chain formula, so
 // it is defined here and stamped identically for every operator. Basis: currency1-raw per currency0-raw
 // in Q128. Input `pricePerCurrency0` is currency1 whole units per 1 currency0 whole unit — the same
 // convention as config.fixedPrice (e.g. 0.0005 WETH per USDC). Converting whole→raw units:
-//   clearingPriceX128 = pricePerCurrency0 * 10^(decimals1 - decimals0) * 2^128
-// so that out_currency1_raw = in_currency0_raw * clearingPriceX128 / 2^128 (the Settler's convention).
+//   mid = pricePerCurrency0 * 10^(decimals1 - decimals0) * 2^128
+// then apply the solvency discount so out_currency1_raw = in_currency0_raw * clearingPriceX128 / 2^128 stays solvent.
 // The price may be fractional, so it is carried as a 1e18-scaled integer to stay in BigInt. Float
 // imprecision here is harmless: the relay stamps ONE integer that every operator reads, so there is no
 // cross-operator divergence to worry about (the whole reason the relay owns this value).
 export function clearingPriceX128(pricePerCurrency0: number, decimals0: number, decimals1: number): bigint {
     const PRICE_SCALE = 10n ** 18n;
     const scaledPrice = BigInt(Math.round(pricePerCurrency0 * 1e18));
-    return (scaledPrice * (10n ** BigInt(decimals1)) << 128n) / (PRICE_SCALE * (10n ** BigInt(decimals0)));
+    const mid = (scaledPrice * (10n ** BigInt(decimals1)) << 128n) / (PRICE_SCALE * (10n ** BigInt(decimals0)));
+    return (mid * (10_000n - SOLVENCY_DISCOUNT_BPS)) / 10_000n;
 }
 
 // referenceBlockNumber is a deterministic function of the target block (not of the caller's current
 // head), so every operator that seals block N agrees on the stake snapshot + prevrandao block. It must
-// be a confirmed past block < targetBlock; with the operator's settle offset of 2, N-2 is exactly the
-// head at the moment operators process N.
-export const REF_OFFSET = 2;
+// be a confirmed past block < targetBlock; the operator targets head+1, so N-1 is the current head at
+// seal time — a confirmed block, and strictly less than the target block the commit lands in.
+export const REF_OFFSET = 1;
 
 function orderWire(o: ToBOrderT): OrderWire {
     return {
