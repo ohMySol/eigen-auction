@@ -37,24 +37,6 @@ export const taskManagerAbi = [
    { name: "resultHash", type: "bytes32", indexed: false }] },
 ] as const;
 
-// DEPRECATED: legacy AuctionServiceManager surface (ECDSA winner/bidAmount + EIP-191 bids). Replaced
-// by taskManagerAbi + the BLS commit path; removed when the app rewiring drops the old settle/commit.
-export const auctionServiceManagerAbi = [
- { type: "function", name: "commitWinner", stateMutability: "nonpayable", inputs: [
-   { name: "poolId", type: "bytes32" }, { name: "targetBlock", type: "uint256" },
-   { name: "winner", type: "address" }, { name: "bidAmount", type: "uint256" },
-   { name: "signatures", type: "bytes[]" }], outputs: [] },
- { type: "function", name: "challengeWinner", stateMutability: "nonpayable", inputs: [
-   { name: "poolId", type: "bytes32" }, { name: "targetBlock", type: "uint256" },
-   { name: "higherBidder", type: "address" }, { name: "higherBidAmount", type: "uint256" },
-   { name: "bidderSignature", type: "bytes" }], outputs: [] },
- { type: "event", name: "WinnerCommitted", inputs: [
-   { name: "poolId", type: "bytes32", indexed: true },
-   { name: "targetBlock", type: "uint256", indexed: true },
-   { name: "winner", type: "address", indexed: true },
-   { name: "bidAmount", type: "uint256", indexed: false }] },
-] as const;
-
 export const stateViewAbi = [
  { type: "function", name: "getSlot0", stateMutability: "view",
   inputs: [{ name: "poolId", type: "bytes32" }], outputs: [

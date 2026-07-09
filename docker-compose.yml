@@ -34,20 +34,6 @@ services:
       timeout: 3s
       retries: 5
 
-  avs-auction:
-    build: { context: ., dockerfile: docker/Dockerfile.backend }
-    command: pnpm start-operator
-    env_file: .env
-    environment:
-      REDIS_URL: redis://redis:6379
-      DEPLOYMENTS_DIR: /app/deployments
-    extra_hosts: ["host.docker.internal:host-gateway"]
-    volumes:
-      - ./deployments:/app/deployments:ro
-    depends_on:
-      redis:
-        condition: service_healthy
-
   # Static Vite SPA served by nginx on :8080. These are BUILD-TIME args — Vite bakes them into the
   # JS bundle. Rebuild the image with `docker compose build frontend` after a redeploy or env change.
   #

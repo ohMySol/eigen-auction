@@ -27,9 +27,9 @@ export function deserializeIntent(raw: string): SwapIntentT {
     };
 }
 
-// Redis-backed queue decoupling the two services: avs-rpc RPUSHes validated intents,
-// avs-auction atomically drains them once per block. Implements IntentSource so the operator
-// loop depends on the structural type, never on this concrete class.
+// Redis-backed queue decoupling ingress from settlement: the relay RPUSHes validated intents,
+// and they are read per block when sealing. Implements IntentSource so consumers depend on the
+// structural type, never on this concrete class.
 export class RedisMempool implements IntentSource {
     constructor(private readonly redis: Redis, private readonly poolId: string) {}
 

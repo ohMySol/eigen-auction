@@ -5,10 +5,8 @@ import { config, poolKey, publicClient } from "@eigen-auction/shared/config";
 import { getPoolId } from "@eigen-auction/shared";
 import { settlerAbi } from "@eigen-auction/shared";
 import { RedisMempool } from "./mempool";
-import { RedisBidQueue } from "./bid-mempool";
 import { RedisOrderStore } from "./order-mempool";
 import { IntentService } from "./services/intent.service";
-import { BidService } from "./services/bid.service";
 import { OrderService } from "./services/order.service";
 import { buildRouter } from "./routes";
 import { errorHandler } from "./middleware/error";
@@ -20,7 +18,6 @@ async function main(): Promise<void> {
   const redis = new Redis(config.redisUrl);
   const poolId = getPoolId(poolKey);
   const mempool = new RedisMempool(redis, poolId);
-  const bidQueue = new RedisBidQueue(redis, poolId);
   const orderStore = new RedisOrderStore(redis, poolId);
 
   // Live nonce-bitmap read against the Settler, injected into the service + status endpoint.
@@ -40,11 +37,6 @@ async function main(): Promise<void> {
     isNonceUsed,
   });
 
-  const bidService = new BidService({
-    expectedPoolId: poolId,
-    addBid: (bid) => bidQueue.addBid(bid),
-  });
-
   const orderService = new OrderService({
     settler: config.settler,
     chainId: config.chainId,
@@ -57,7 +49,6 @@ async function main(): Promise<void> {
   app.use(
     buildRouter({
       intentService,
-      bidService,
       orderService,
       auction: {
         orders: () => orderStore.all(),

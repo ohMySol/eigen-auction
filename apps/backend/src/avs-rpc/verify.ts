@@ -1,6 +1,6 @@
-import { recoverTypedDataAddress, recoverMessageAddress, type Address, type Hex } from "viem";
-import type { SwapIntentT, SignedBidT } from "@eigen-auction/shared";
-import { INTENT_TYPES, intentDomain, bidHash } from "@eigen-auction/shared";
+import { recoverTypedDataAddress, type Address, type Hex } from "viem";
+import type { SwapIntentT } from "@eigen-auction/shared";
+import { INTENT_TYPES, intentDomain } from "@eigen-auction/shared";
 
 // Thrown when an intent is well-formed JSON but fails a business rule (wrong pool, expired,
 // bad signature, used nonce). Distinct from infra errors so the API maps it to 400, not 500.
@@ -63,28 +63,5 @@ export async function validateIntent(intent: SwapIntentT, ctx: ValidationCtx): P
 
     if (await ctx.isNonceUsed(intent.user, intent.nonce)) {
         throw new ValidationError("nonce already used");
-    }
-}
-
-// Recover the address that signed a bid, from the EIP-191-prefixed bid hash.
-export async function recoverBidSigner(bid: SignedBidT): Promise<Address> {
-    return recoverMessageAddress({
-        message: { raw: bidHash(bid.poolId, bid.targetBlock, bid.bidAmount) },
-        signature: bid.signature,
-    });
-}
-
-// Reject a searcher bid that is malformed or for the wrong pool, or whose signature does not match
-// the claimed bidder. Throws ValidationError (mapped to 400) on the first failure.
-export async function validateBid(bid: SignedBidT, expectedPoolId: Hex): Promise<void> {
-    if (bid.poolId.toLowerCase() !== expectedPoolId.toLowerCase()) {
-        throw new ValidationError("bid targets the wrong pool");
-    }
-    if (bid.bidAmount === 0n) {
-        throw new ValidationError("bid amount is zero");
-    }
-    const signer = await recoverBidSigner(bid);
-    if (signer.toLowerCase() !== bid.bidder.toLowerCase()) {
-        throw new ValidationError("invalid bid signature: signer does not match bidder");
     }
 }
