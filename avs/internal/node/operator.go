@@ -29,7 +29,7 @@ type Randao interface {
 }
 
 // Quorum returns quorum-0 operators sorted by ID at a reference block — the canonical order the
-// executor draw depends on (§2.6). Backed by the registry on the fork; static in the dev harness.
+// executor draw depends on. Backed by the registry on the fork; static in the dev harness.
 type Quorum interface {
 	QuorumZero(ctx context.Context, refBlock uint64) ([]consensus.Operator, error)
 }
@@ -52,30 +52,35 @@ type Operator struct {
 	Submitter Submitter
 }
 
-// RunBlock resolves one target block, BLS-signs the msgHash, and submits the response. It returns the
-// sealed set and Result so the caller can settle when this operator is the drawn executor (the set
-// carries the intents + clearing price settle needs).
-func (o *Operator) RunBlock(ctx context.Context, targetBlock uint64) (*feed.SealedSet, operator.Result, error) {
-	set, err := o.Feed.Fetch(ctx, targetBlock)
+// RunBlock resolves one target block, BLS-signs the msgHash, and submits the response. `submitted` is
+// false (with no error) when the block has nothing sealed yet — no orders and no intents — so the
+// caller keeps polling that target until a batch appears rather than opening an empty round. It
+// returns the sealed set and Result so the caller can settle when this operator is the drawn executor.
+func (o *Operator) RunBlock(ctx context.Context, targetBlock uint64) (set *feed.SealedSet, res operator.Result, submitted bool, err error) {
+	set, err = o.Feed.Fetch(ctx, targetBlock)
 	if err != nil {
-		return nil, operator.Result{}, err
+		return nil, operator.Result{}, false, err
 	}
+	if len(set.Orders) == 0 && len(set.Intents) == 0 {
+		return set, operator.Result{}, false, nil
+	}
+
 	seed, err := o.Chain.Prevrandao(ctx, uint64(set.ReferenceBlockNumber))
 	if err != nil {
-		return nil, operator.Result{}, err
+		return set, operator.Result{}, false, err
 	}
 	ops, err := o.Quorum.QuorumZero(ctx, uint64(set.ReferenceBlockNumber))
 	if err != nil {
-		return nil, operator.Result{}, err
+		return set, operator.Result{}, false, err
 	}
 
-	res := operator.Resolve(set, o.PoolID, seed, ops, o.Settler, o.ChainID)
+	res = operator.Resolve(set, o.PoolID, seed, ops, o.Settler, o.ChainID)
 	sig := o.Keys.SignMessage(res.MsgHash)
 	sr := attest.Build(res, o.PoolID, targetBlock, set.ReferenceBlockNumber, o.OperatorID, sig)
 	if err := o.Submitter.Submit(ctx, sr); err != nil {
-		return set, res, err
+		return set, res, true, err
 	}
-	return set, res, nil
+	return set, res, true, nil
 }
 
 // IsExecutor reports whether this operator was drawn to settle the block.

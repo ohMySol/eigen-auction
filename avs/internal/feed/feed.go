@@ -1,10 +1,10 @@
 // Package feed is the operator's read side of the relay: it fetches the block's sealed bid+intent set
 // and decodes it into the consensus types. Every operator GETs the identical byte payload for block N
-// (the relay's pull-at-cutoff seal, §1.1), so all operators trivially agree on the auction inputs.
+// (the relay's pull-at-cutoff seal), so all operators trivially agree on the auction inputs.
 //
 // Wire contract (what the TS relay must emit): a JSON object per block. bigints (quantities, clearing
 // price) are decimal strings — JSON has no bigint; addresses/poolId/signatures are 0x-hex. This is the
-// canonical shape the relay's /auction/{block} endpoint serves; the §4.2 TS relay conforms to it.
+// canonical shape the relay's /auction/{block} endpoint serves; the TS relay conforms to it.
 package feed
 
 import (

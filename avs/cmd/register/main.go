@@ -1,11 +1,11 @@
-// Command register onboards one operator into the AVS operator set (§4.5) — the gate to running the
+// Command register onboards one operator into the AVS operator set — the gate to running the
 // BLS flow. It is run once per operator with that operator's ECDSA + BLS keys, against the mainnet
 // fork after `make deploy-fork`. The steps use eigensdk's ElChainWriter, which computes the BLS
 // pubkey-registration proof internally:
 //
-//  1. RegisterAsOperator            — become an EigenLayer operator (skipped if already one).
-//  2. (optional) deposit + allocate — give the operator slashable weight in the quorum's strategy.
-//  3. RegisterForOperatorSets       — join the operator set so the BLS pubkey lands in BLSApkRegistry.
+// 1. RegisterAsOperator — become an EigenLayer operator (skipped if already one).
+// 2. (optional) deposit + allocate — give the operator slashable weight in the quorum's strategy.
+// 3. RegisterForOperatorSets — join the operator set so the BLS pubkey lands in BLSApkRegistry.
 //
 // Fork-gated: build-checked here, exercised on the fork. Fund the operator's stake token via anvil
 // cheats (like `make fund`) before running with STAKE_AMOUNT set.
@@ -100,10 +100,16 @@ func main() {
 		Socket: "https://eigen-auction.local/operator",
 		WaitForReceipt: true,
 	}); err != nil {
-		log.Fatalf("registerForOperatorSets: %v", err)
+		// AlreadyMemberOfSet() — the operator is already registered in this set, so registration is
+		// effectively done; log and continue rather than abort, keeping `make register` re-runnable.
+		if strings.Contains(err.Error(), "0xd8d8dc4e") {
+			log.Printf("registerForOperatorSets: operator already a member of set %d (skipping)", setID)
+		} else {
+			log.Fatalf("registerForOperatorSets: %v", err)
+		}
 	}
 
-	operatorID := crypto.Keccak256Hash(blsKeys.GetPubKeyG1().Serialize())
+	operatorID := common.Hash(eigentypes.OperatorIdFromKeyPair(blsKeys))
 	log.Printf("registered operator %s into set %d (operatorId=%s)", operatorAddr.Hex(), setID, operatorID.Hex())
 }
 

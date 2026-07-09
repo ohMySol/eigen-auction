@@ -75,9 +75,12 @@ func TestRunBlockSignsAndSubmits(t *testing.T) {
 		Feed: fakeFeed{set}, Chain: fakeRandao{[32]byte{31: 0x9}}, Quorum: fakeQuorum{ops}, Submitter: sink,
 	}
 
-	_, res, err := op.RunBlock(context.Background(), 100)
+	_, res, submitted, err := op.RunBlock(context.Background(), 100)
 	if err != nil {
 		t.Fatalf("RunBlock: %v", err)
+	}
+	if !submitted {
+		t.Fatalf("expected a non-empty set to be submitted")
 	}
 	if !res.HasArb || res.Arb.Searcher != signer {
 		t.Fatalf("expected the signed order to win")
@@ -90,6 +93,29 @@ func TestRunBlockSignsAndSubmits(t *testing.T) {
 	ok, err := sink.got.Signature().Verify(kp.GetPubKeyG2(), res.MsgHash)
 	if err != nil || !ok {
 		t.Fatalf("submitted BLS signature must verify: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestRunBlockSkipsEmptySet(t *testing.T) {
+	kp, err := bls.GenRandomBlsKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &capture{}
+	empty := &feed.SealedSet{TargetBlock: 100, ReferenceBlockNumber: 99, ClearingPriceX128: big.NewInt(1)}
+	op := &Operator{
+		ChainID: big.NewInt(31337), Keys: kp,
+		Feed: fakeFeed{empty}, Chain: fakeRandao{}, Quorum: fakeQuorum{}, Submitter: sink,
+	}
+	_, _, submitted, err := op.RunBlock(context.Background(), 100)
+	if err != nil {
+		t.Fatalf("RunBlock: %v", err)
+	}
+	if submitted {
+		t.Fatal("an empty sealed set must not open a round")
+	}
+	if sink.got.SigG1 != nil {
+		t.Fatal("nothing should have been submitted for an empty set")
 	}
 }
 

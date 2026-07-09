@@ -60,6 +60,10 @@ func main() {
 	must(err, "load aggregator key")
 	auth, err := bind.NewKeyedTransactorWithChainID(commitKey, new(big.Int).SetUint64(chainID))
 	must(err, "build transactor")
+	// Higher tip than the operator's settle (1 gwei) so anvil (fee-ordered) executes commitWinner
+	// before settle within the shared target block — settle reads the commitment commit just wrote.
+	auth.GasTipCap = big.NewInt(2_000_000_000)   // 2 gwei
+	auth.GasFeeCap = big.NewInt(200_000_000_000) // 200 gwei
 
 	quorumNums := types.QuorumNums{types.QuorumNum(dep.QuorumNumbers)}
 	blsService := buildBlsAggService(ctx, dep, mustEnv("RPC_URL"), mustEnv("WS_URL"))
@@ -155,7 +159,14 @@ func buildBlsAggService(ctx context.Context, dep *chaincfg.Deployment, rpcURL, w
 	subscriber, err := avsregistrychain.NewSubscriberFromConfig(cfg, wsClient, logger)
 	must(err, "build registry subscriber")
 
-	opsInfo := operatorsinfo.NewOperatorsInfoServiceInMemory(ctx, subscriber, reader, nil, operatorsinfo.Opts{}, logger)
+	// Scan for past pubkey-registration events from the deployment block, not genesis: those blocks are
+	// local to the fork (mined after the fork point), so eth_getLogs isn't proxied to the upstream RPC
+	// and doesn't hit its block-range cap (e.g. Alchemy free tier's 10-block eth_getLogs limit).
+	opsInfo := operatorsinfo.NewOperatorsInfoServiceInMemory(
+		ctx, subscriber, reader, nil,
+		operatorsinfo.Opts{StartBlock: new(big.Int).SetUint64(dep.DeployedBlock)},
+		logger,
+	)
 	avsReg := avsregistry.NewAvsRegistryServiceChainCaller(reader, opsInfo, logger)
 
 	// Operators signed msgHash directly, so the task-response digest IS the msgHash.

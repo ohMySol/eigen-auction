@@ -12,7 +12,7 @@ import (
 	"github.com/ohMySol/eigen-auction/avs/internal/consensus"
 )
 
-// RecoverToBOrderSigner recovers the searcher that signed an arb order (§2.5): it rebuilds the exact
+// RecoverToBOrderSigner recovers the searcher that signed an arb order: it rebuilds the exact
 // EIP-712 digest (consensus.OrderDigest) and ecrecovers the 65-byte secp256k1 signature, matching what
 // EigenAuctionTaskManager._proveFraud verifies on-chain. An operator counts an order in the auction
 // only when this returns order.Searcher — a cheap forgery filter before the (expensive) hashing round.

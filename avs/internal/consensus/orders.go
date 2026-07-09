@@ -21,7 +21,7 @@ func DomainSeparator(settler [20]byte, chainID *big.Int) [32]byte {
 	))
 }
 
-// OrderDigest is the EIP-712 digest a searcher signs for an arb order (§2.5):
+// OrderDigest is the EIP-712 digest a searcher signs for an arb order:
 // keccak256(0x1901 ++ domainSeparator ++ toBStructHash(order)). Recovering this against the order's
 // secp256k1 signature must yield order.Searcher; that recovery is done at the chain/operator layer,
 // where go-ethereum is already a dependency. Byte-identical to the TS reference orderDigest.

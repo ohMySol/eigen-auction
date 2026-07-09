@@ -42,7 +42,7 @@ func Dial(ctx context.Context, rpcURL string, settlerAddr, taskManagerAddr commo
 	return &Client{eth: eth, Settler: s, TaskManager: tm, ChainID: chainID}, nil
 }
 
-// Prevrandao is the RANDAO seed for the executor draw (§2.6): post-merge it is the block header's mix
+// Prevrandao is the RANDAO seed for the executor draw: post-merge it is the block header's mix
 // digest. Every operator reads the same value at a given referenceBlockNumber, keeping the draw in sync.
 func (c *Client) Prevrandao(ctx context.Context, block uint64) ([32]byte, error) {
 	h, err := c.eth.HeaderByNumber(ctx, new(big.Int).SetUint64(block))

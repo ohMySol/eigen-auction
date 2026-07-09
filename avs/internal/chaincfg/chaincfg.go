@@ -24,7 +24,7 @@ type Pool struct {
 }
 
 // Deployment is the addresses + pool config the AVS binds to. The EL-core fields (delegationManager …
-// stakeStrategy) are only needed by operator-set registration (§4.5); the rest drive commit/settle.
+// stakeStrategy) are only needed by operator-set registration; the rest drive commit/settle.
 type Deployment struct {
 	ChainID uint64 `json:"chainId"`
 	DeployedBlock uint64 `json:"deployedBlock"`

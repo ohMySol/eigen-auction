@@ -8,7 +8,7 @@ type Operator struct {
 	Addr [20]byte
 }
 
-// Executor deterministically draws the settling operator for a block (§2.6). Because the draw is a
+// Executor deterministically draws the settling operator for a block. Because the draw is a
 // pure function of public inputs, every operator recomputes it and refuses to sign a task whose
 // executor differs — so the aggregator cannot steer settlement to a colluding operator.
 //

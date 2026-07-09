@@ -17,7 +17,7 @@ func b32(last byte) [32]byte {
 	return x
 }
 
-// Golden vector: the TS reference draw (§2.6) must select the same operator for these inputs.
+// Golden vector: the TS reference draw must select the same operator for these inputs.
 func TestExecutorDraw(t *testing.T) {
 	rh := Compute(arb(), price(), intents())
 	got := Executor(operators(), poolID, big.NewInt(100), rh, b32(0x9))
