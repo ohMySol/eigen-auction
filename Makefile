@@ -28,6 +28,8 @@ ANVIL_OPERATOR ?= 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 SEARCHERS := 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC 0x90F79bf6EB2c4f870365E785982E1f101E93b906 0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65
 USDC := 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 WETH := 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
+# Lido stETH — the operator-set stake token (config/networks/1.json .eigenlayer.stakeToken).
+STETH := 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84
 # 1,000,000 USDC (6dp) as a 32-byte storage word.
 USDC_BAL := 0x000000000000000000000000000000000000000000000000000000e8d4a51000
 # 5000 WETH (18dp) as a 32-byte storage word.
@@ -35,7 +37,7 @@ WETH_BAL := 0x00000000000000000000000000000000000000000000010f0cf064dd59200000
 # 10000 ETH.
 ETH_BAL := 0x21e19e0c9bab2400000
 
-.PHONY: anvil-fork fund deploy-fork deploy-testnet start-server start-operator demo demo-full build test avs-test avs-integration frontend-dev frontend-build up
+.PHONY: anvil-fork fund deploy-fork seed deploy-testnet start-server start-operator demo demo-full build test avs-test avs-integration fund-stake register approve start-aggregator start-operator-go post-batch drive-round frontend-dev frontend-build up
 
 ## Start a mainnet fork. --auto-impersonate lets fund targets send from whales without unlocking each.
 anvil-fork:
@@ -68,6 +70,12 @@ deploy-fork:
 	forge script $(CONTRACTS)/script/Deploy.s.sol \
 		--root $(CONTRACTS) --rpc-url $(RPC_URL) --broadcast -vvv
 
+## Seed the deployed pool with a full-range LP position so settle's arb + batch swaps have liquidity.
+## Run once after deploy-fork + fund (the deployer must hold currency0/currency1).
+seed:
+	forge script $(CONTRACTS)/script/SeedLiquidity.s.sol \
+		--root $(CONTRACTS) --rpc-url $(RPC_URL) --broadcast -vvv
+
 ## Deploy the full system to Sepolia: FaucetTokens + protocol + real EigenLayer operator registration
 ## + seeded LP. Writes deployments/11155111.json. Requires SEPOLIA_RPC_URL, DEPLOYER_PK, OPERATOR_PK
 ## (both funded with Sepolia ETH). Append `--verify` with ETHERSCAN_API_KEY set to verify on Etherscan.
@@ -84,6 +92,40 @@ test:
 ## Fast, infra-free Go unit tests for the AVS core (consensus, chain, feed, operator).
 avs-test:
 	cd avs && go test ./...
+
+## Mint stETH to the operator by submitting its own (funded) ETH to Lido, so `make register` can
+## deposit real stake into the stETH strategy. stETH mints ~1:1 with ETH; 2 ETH → ~2 stETH.
+fund-stake:
+	cast send $(STETH) "submit(address)" 0x0000000000000000000000000000000000000000 \
+		--value 2ether --private-key $(OPERATOR_PK) --rpc-url $(RPC_URL)
+
+## Register this operator into the AVS operator set (BLS pubkey → APK registry). Run once per operator
+## with its OPERATOR_PK + BLS_PRIVATE_KEY, after deploy-fork. Set STAKE_AMOUNT to also deposit + allocate
+## (run `make fund-stake` first to give the operator stETH).
+register:
+	cd avs && DEPLOYMENTS_DIR=$(PWD)/deployments go run ./cmd/register
+
+## Run the Go aggregator: collects operator BLS sigs, aggregates, submits commitWinner. Needs WS_URL.
+start-aggregator:
+	cd avs && DEPLOYMENTS_DIR=$(PWD)/deployments go run ./cmd/aggregator
+
+## Run a Go operator node: seals → resolves → BLS-signs → submits, and settles if drawn. Run N with N keysets.
+start-operator-go:
+	cd avs && DEPLOYMENTS_DIR=$(PWD)/deployments go run ./cmd/operator
+
+## Approve the Settler to pull tokens from the searchers + user (one-time, after deploy/fund). Needed
+## so settle's transferFrom succeeds. Idempotent.
+approve:
+	pnpm approve
+
+## Post a batch of searcher orders + a user intent to the relay for the next target block, then mine.
+post-batch:
+	pnpm post-batch
+
+## Orchestrate one full same-block round: automine off → post batch → wait for commit+settle to queue
+## → mine the target block → report. Prereqs: start-server + start-aggregator + start-operator-go running.
+drive-round:
+	pnpm drive-round
 
 ## Tier-2 harness: cross-check the Go core against the DEPLOYED Settler on the running fork.
 ## Prereqs: `make anvil-fork` (terminal 1) + `make deploy-fork` (terminal 2) done.
