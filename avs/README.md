@@ -71,7 +71,7 @@ operator set.
 ```
 make anvil-fork                         # terminal 1: mainnet fork (also serves ws)
 make fund deploy-fork seed-pool approve # terminal 2: fund + deploy + seed liquidity + approvals
-make fund-operator-stake register \              # operator 1 --> operator set (repeat per operator, see docs/N_OPERATORS.md)
+make fund-operator-stake register \              # operator 1 --> operator set (repeat per operator)
   STAKE_AMOUNT=1000000000000000000 STAKE_MAGNITUDE=1000000000000000000
 cd aspire-apphost && aspire run         # redis + relay + aggregator + N operators + frontend
 make drive-round                        # post a batch, mine one block --> commit + settle same block

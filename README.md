@@ -17,9 +17,10 @@ EigenAuction is a Uniswap V4 hook that gives liquidity providers back the value 
 - [Architecture & Workflows](#architecture)
 - [Repository layout](#repository-layout)
 - [Quick start](#quick-start)
+- [Running the project with Aspire](#running-the-project-with-aspire)
 - [Tests](#tests)
 - [Contributing](#contributing)
-- [More documentation](#more-documentation)
+- [Documentation](#documentation)
 
 ---
 
@@ -27,15 +28,16 @@ EigenAuction is a Uniswap V4 hook that gives liquidity providers back the value 
 
 This project is in **active development**, so the code, documentation and diagrams will keep changing. Once it is live on a testnet, this section will say so.
 
-The on-chain side has moved to a **BLS operator-set design**: auction results are attested by a stake-weighted quorum of the operator set, verified on-chain through EigenLayer's BLS middleware, and only then settled. The smart contracts for this (commit, settle, challenge, slash, rewards) are implemented and tested. The backend and frontend requires an update - see their READMEs.
+The full **multi-operator BLS design** runs end-to-end on a local mainnet fork: searchers/users submit signed orders and intents to the relay, N EigenLayer operators independently recompute the block's result and BLS-sign it, the aggregator commits the stake-weighted quorum signature on-chain via `EigenAuctionTaskManager.commitWinner`, and the drawn executor settles — commit and settle in the same block. The off-chain half is a Go module (`avs/`); the whole local stack is orchestrated with [Aspire](#running-the-project-with-aspire).
 
-If you want to contribute, the open areas are:
+What works today:
 
-- **Backend aggregator** — collect partial BLS signatures from operator nodes each block, aggregate them, select the executor off-chain, and submit the commitment on-chain. The current `signer.ts` still does single-operator ECDSA signing and needs to be replaced.
-- **Operator node** — BLS keygen, registration through the registry coordinator, and the per-block auction loop.
-- **Frontend** — LP dashboard, a swap widget that signs a `SwapIntent` and sends it to the operator RPC, and pool statistics.
+- **Contracts** — commit, settle, challenge/slash, rewards, and the LP liveness fallback (`FALLBACK_PERIOD`), implemented and tested.
+- **Go AVS** (`avs/`) — operator node (seal --> resolve --> BLS-sign --> settle-if-drawn), aggregator (BLS aggregation --> `commitWinner`), and operator-set registration. The executor draw reads the live operator set from `OperatorStateRetriever`, so it scales to N operators. See [avs/README.md](avs/README.md).
+- **Relay** (`apps/backend`) — the seal endpoint: order/intent intake + the per-block canonical sealed set with a live clearing price. See [apps/backend/README.md](apps/backend/README.md).
+- **Frontend** — LP dashboard + a swap widget that signs a `SwapIntent` and posts it to the relay.
 
-See [Contributing](#contributing) for the skills that help most.
+Open / next: a live N-operator run on the fork, the challenge/`_proveFraud` slash path end-to-end, and mainnet submission via a Flashbots bundle (replacing the local `drive-round` mining choreography). See [Contributing](#contributing).
 
 ---
 
@@ -92,68 +94,109 @@ Below you can see the full architecture of EigenAuction with on-chain and off-ch
 
 ## Repository layout
 
-The off-chain code is a pnpm-workspaces monorepo under `packages/`; the Solidity project stays a
-standalone Foundry root under `src/contracts/`.
+The TypeScript code is a pnpm-workspaces monorepo (`apps/` + `packages/`); the Go AVS is a separate
+module under `avs/`; the Solidity project is a standalone Foundry root under `src/contracts/`.
 
 ```
 src/contracts/               Solidity (Foundry) — see src/contracts/README.md
   src/
-    EigenAuctionHook.sol            V4 hook: pool lock + LP reward accumulator
+    EigenAuctionHook.sol            V4 hook: pool lock + LP reward accumulator + liveness fallback
     EigenAuctionServiceManager.sol  EigenLayer AVS identity, fee custody, rewards
     EigenAuctionTaskManager.sol     BLS commit, fraud challenge, slashing
     Settler.sol                     Atomic batch settlement (arb + uniform-price intents)
-    interfaces/                     Public interfaces
-    types/                          ToBOrder, SwapIntent, Commitment, Position, PoolRewards
-    libraries/                      Errors, Events, Constants, reward-growth math
+    interfaces/  types/  libraries/
   script/                           Deploy + middleware wiring (Foundry)
   test/
 
-packages/                    pnpm workspaces (off-chain)
-  shared/                    @eigen-auction/shared — config, ABIs, types (consumed by backend)
-  backend/                   @eigen-auction/backend
-    src/avs-auction/         Operator node — per-block auction loop (being updated for BLS)
-    src/avs-rpc/             HTTP API — signed intent + bid intake
-    src/scripts/             Fork/demo drivers
-  frontend/                  @eigen-auction/frontend
-    app/                     React SPA — LP dashboard, trade view, pool stats
-      chain/                 wagmi hooks, deployment artifact loader, V4 math
+avs/                         Go — the off-chain AVS (operator + aggregator). See avs/README.md
+  cmd/                       binaries: operator, aggregator, register
+  internal/                  consensus core, chain adapter, feed, agg, attest, node
 
-deployments/                 JSON artifacts written by deploy scripts, read by backend + frontend
-docs/assets/                 Diagrams + images
+apps/ + packages/            pnpm workspaces (TypeScript)
+  packages/shared/           @eigen-auction/shared — config, ABIs, types, EIP-712 signing
+  apps/backend/              @eigen-auction/backend — the relay (avs-rpc) + round/searcher scripts
+    src/avs-rpc/             HTTP relay: /order, /intent intake + GET /auction/:block seal
+    src/scripts/             post-batch, drive-round, approve
+  apps/frontend/             @eigen-auction/frontend — React SPA (LP dashboard, trade view)
+
+aspire-apphost/              Aspire AppHost (apphost.mts) — local orchestrator for all services
+deployments/                 JSON artifacts written by deploy scripts, read by every stack
+docs/                        
 ```
 
 ---
 
 ## Quick start
 
-> This section requires update. Below instructions may not work correctly at the moment because the backend and frontend requires changes after moving to BLS signing.
+Prerequisites: [Foundry](https://book.getfoundry.sh/), Node 20+ with `pnpm`, Go 1.22+, and (for the
+orchestrated run) the [Aspire CLI](https://aspire.dev). Copy `.env.example` to `.env` and fill it in.
+
+### Local mainnet fork (the primary dev flow)
+
+```bash
+# terminal 1 — keep this running
+make anvil-fork                          # fork mainnet at chainId 1 (real USDC/WETH)
+
+# terminal 2 — one-time chain setup
+pnpm install
+make fund deploy-fork seed-pool approve  # fund wallets, deploy, seed pool liquidity, set approvals
+make fund-operator-stake register \               # register operator 1 into the operator set (BLS pubkey + stake)
+  STAKE_AMOUNT=1000000000000000000 STAKE_MAGNITUDE=1000000000000000000
+# for N operators, repeat fund-operator/fund-operator-stake/register per keyset
+```
+
+Then bring the services up with Aspire and drive a round (see
+[Running with Aspire](#running-the-project-with-aspire)):
+
+```bash
+cd aspire-apphost && aspire run          # redis + relay + aggregator + N operators + frontend
+make drive-round                         # post a batch, mine one block --> commit + settle same block
+```
 
 ### Sepolia testnet
 
 ```bash
-cp .env.example .env           # fill SEPOLIA_RPC_URL, DEPLOYER_PK, OPERATOR_PK, ETHERSCAN_API_KEY
-make deploy-testnet            # deploy contracts, write deployments/11155111.json
-make up                        # start the off-chain services
-```
-
-### Local mainnet fork
-
-```bash
-make anvil-fork                # terminal 1: fork mainnet
-make fund deploy-fork          # terminal 2: fund wallets + deploy (seed LP via a V4 router/PositionManager)
-make start-server              # avs-rpc
-make start-operator            # avs-auction operator
-make frontend-dev              # Vite dev server
+make deploy-testnet   # deploy contracts + register, write deployments/11155111.json
+make up               # docker stack (redis + relay + frontend) --> http://localhost:8080
 ```
 
 ---
 
-## Tests
-> Contracts tests work as expected and they are up to date. Backend tests require an update.
+## Running the project with Aspire
+
+The long-running services (redis, the relay, the aggregator, N operators, the frontend) are
+orchestrated by a **Aspire** AppHost written in TypeScript ([aspire-apphost/apphost.mts](aspire-apphost/apphost.mts)).
+It gives you one command to start the whole graph, a dashboard with per-service logs/traces, and
+consistent env wiring. Aspire manages the *services*; the chain setup (anvil, deploy, seed, register)
+stays in `make`/`forge`, and a round is still driven with `make drive-round`.
 
 ```bash
-make test          # all tests: forge (Solidity) + vitest (TypeScript)
-make build         # compile contracts only
+curl -sSL https://aspire.dev/install.sh | bash   # install the Aspire CLI (once; needs Node 20+)
+cd aspire-apphost && aspire run                  # starts every service + opens the dashboard
+```
+
+- Operators are **local-only**: the AppHost adds them only when `APP_ENV=local` (the default). On
+  testnet/mainnet, operators are independent third parties and are not hosted here.
+- The one prod secret (the aggregator key) is an Aspire **secret parameter**; other config comes from
+  the repo-root `.env`.
+
+### Testing the full flow
+
+1. Complete the fork setup above (`anvil-fork` --> `fund deploy-fork seed-pool approve` --> register).
+2. `aspire run` — confirm all services are green in the dashboard (`curl localhost:8088/health`).
+3. `make drive-round` — posts searcher orders + a user intent, then mines the target block. In the
+   dashboard you should see every operator log the **same** `executor`, the aggregator log `committed …`,
+   and the drawn operator log `settle submitted …`.
+
+---
+
+## Tests
+
+```bash
+make test           # TypeScript (vitest) + Solidity (forge) — see Makefile
+make avs-test       # Go AVS unit tests (consensus core, chain, feed, operator)
+make avs-integration # Go core cross-checked against the deployed Settler (needs a running fork)
+make build          # compile contracts only
 ```
 
 ---
@@ -171,7 +214,8 @@ Everyone is welcome. You'll be especially useful if you know:
 
 ## Documentation
 
-- [src/contracts/README.md](src/contracts/README.md)
-- [apps/backend/README.md](apps/backend/README.md)
-- [apps/frontend/README.md](apps/frontend/README.md)
+- [src/contracts/README.md](src/contracts/README.md) — Solidity contracts
+- [avs/README.md](avs/README.md) — Go AVS (operator, aggregator, register, consensus core)
+- [apps/backend/README.md](apps/backend/README.md) — the relay + scripts
+- [apps/frontend/README.md](apps/frontend/README.md) — React SPA
 </content>

@@ -1,21 +1,22 @@
 # EigenAuction LVR hook — local + testnet development stack.
 #
-# ── Sepolia testnet (judges / live demo) ─────────────────────────────────────────────────
-#   1. Fill .env (SEPOLIA_RPC_URL, DEPLOYER_PK, OPERATOR_PK, CHAIN_ID=11155111, RPC_URL=SEPOLIA_RPC_URL)
-#   2. make deploy-testnet                # deploys contracts, writes deployments/11155111.json
-#   3. export VITE_RPC_URL=<sepolia_rpc> VITE_CHAIN_ID=11155111
-#   4. make up                            # builds + starts all 4 containers → http://localhost:8080
-#
 # ── Local mainnet fork (development) ─────────────────────────────────────────────────────
 #   make anvil-fork                            # terminal 1: fork mainnet (chainId 1)
-#   make fund deploy-fork seed-pool approve    # terminal 2: fund + deploy + seed liquidity + approvals
-#   make fund-operator-stake register          # onboard operator(s) —  fund with stETH, register BLS pubkey --> APK registry
+#   make fund deploy-fork seed-pool approve    # terminal 2: fund + deploy + seed initial liquidity in the pool + approvals
+#   make fund-operator-stake register          # onboard operator(s) — fund with stETH, register BLS pubkey --> APK registry
 #   cd aspire-apphost && aspire run            # start every local service: redis, relay, aggregator,
 #                                              # operators, frontend (see the root README's Aspire section)
 #   make drive-round                           # drive one same-block commit+settle round
 #
+# ── Sepolia testnet ─────────────────────────────────────────────────────────────────────
+#   1. Fill .env (SEPOLIA_RPC_URL, DEPLOYER_PK, OPERATOR_PK, CHAIN_ID=11155111, RPC_URL=SEPOLIA_RPC_URL)
+#   2. make deploy-testnet                # deploys contracts, writes deployments/11155111.json
+#   3. export VITE_RPC_URL=<sepolia_rpc> VITE_CHAIN_ID=11155111
+#   4. make up                            # builds + starts all 4 containers --> http://localhost:8080
+# 
 # Required in .env: MAINNET_RPC_URL, SEPOLIA_RPC_URL, DEPLOYER_PK, OPERATOR_PK, SETTLER_CALLER_PK,
 #                   RPC_URL, CHAIN_ID, REDIS_URL
+
 include .env
 export
 
@@ -69,7 +70,7 @@ fund:
 ## Fund an ADDITIONAL operator address with ETH + WETH + USDC so it can pay gas and settle if drawn.
 ## Use when scaling past the single hardcoded operator: `make fund-operator OP=0x<addr>` (the address of
 ## that operator's OPERATOR_PK). Pair with `make fund-operator-stake register` using the same OPERATOR_PK
-## + a distinct BLS_PRIVATE_KEY, then add the operator in the Aspire AppHost. See docs/N_OPERATORS.md.
+## + a distinct BLS_PRIVATE_KEY, then add the operator in the Aspire AppHost.
 fund-operator:
 	@test -n "$(OP)" || { echo "set OP=0x<operator address>"; exit 1; }
 	cast rpc anvil_setBalance $(OP) $(ETH_BAL) --rpc-url $(RPC_URL)
@@ -112,7 +113,7 @@ fund-operator-stake:
 	cast send $(STETH) "submit(address)" 0x0000000000000000000000000000000000000000 \
 		--value 2ether --private-key $(OPERATOR_PK) --rpc-url $(RPC_URL)
 
-## Register this operator into the AVS operator set (BLS pubkey → APK registry). Run once per operator
+## Register this operator into the AVS operator set (BLS pubkey --> APK registry). Run once per operator
 ## with its OPERATOR_PK + BLS_PRIVATE_KEY, after deploy-fork. Set STAKE_AMOUNT to also deposit + allocate
 ## (run `make fund-operator-stake` first to give the operator stETH).
 register:
@@ -127,8 +128,8 @@ approve:
 post-batch:
 	pnpm post-batch
 
-## Orchestrate one full same-block round: automine off → post batch → wait for commit+settle to queue
-## → mine the target block → report. Prereqs: the services running (`cd aspire-apphost && aspire run`).
+## Orchestrate one full same-block round: automine off --> post batch --> wait for commit+settle to queue
+## --> mine the target block --> report. Prereqs: the services running (`cd aspire-apphost && aspire run`).
 drive-round:
 	pnpm drive-round
 
