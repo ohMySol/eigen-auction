@@ -1,10 +1,9 @@
 // Searcher + user driver for the multi-operator BLS auction. Signs a set of competing searcher
 // ToBOrders and a user SwapIntent for one target block and POSTs them to the relay (/order, /intent).
 // The Go operator then pulls the sealed set via GET /auction/{block}, elects the winner, and the round
-// proceeds. This is the "what a searcher/user does" script for the new flow (the old full-demo.ts uses
-// the legacy EIP-191 /bid path).
+// proceeds. This is the "what a searcher/user does" script that drives a round.
 //
-// Prereqs: make deploy-fork done; docker compose up -d redis; make start-server (relay on :INTENT_PORT).
+// Prereqs: deploy-fork + seed-pool done; redis + the relay (avs-rpc) running (via `aspire run` or make).
 // Run:      npm run post-batch
 // Then mine blocks (e.g. `cast rpc anvil_mine 0x1`) so the operator's head reaches the target block.
 import "dotenv/config";

@@ -1,5 +1,5 @@
 import type Redis from "ioredis";
-import type { SwapIntentT, IntentSource } from "@eigen-auction/shared";
+import type { SwapIntentT } from "@eigen-auction/shared";
 
 // One Redis list per pool. Lower-cased so the producer and consumer never disagree on the key.
 const listKey = (poolId: string) => `intents:${poolId.toLowerCase()}`;
@@ -27,10 +27,9 @@ export function deserializeIntent(raw: string): SwapIntentT {
     };
 }
 
-// Redis-backed queue decoupling ingress from settlement: the relay RPUSHes validated intents,
-// and they are read per block when sealing. Implements IntentSource so consumers depend on the
-// structural type, never on this concrete class.
-export class RedisMempool implements IntentSource {
+// Redis-backed queue decoupling ingress from sealing: the relay RPUSHes validated intents, and the
+// seal endpoint reads them per block.
+export class RedisMempool {
     constructor(private readonly redis: Redis, private readonly poolId: string) {}
 
     // Append a validated intent to the tail of the pool's queue.
@@ -38,17 +37,8 @@ export class RedisMempool implements IntentSource {
         await this.redis.rpush(listKey(this.poolId), serializeIntent(intent));
     }
 
-    // Atomically read-and-clear the whole queue so an intent is handed to exactly one block.
-    // LRANGE + DEL run in a single MULTI; a concurrent add either lands fully before or after.
-    async drain(): Promise<SwapIntentT[]> {
-        const k = listKey(this.poolId);
-        const res = await this.redis.multi().lrange(k, 0, -1).del(k).exec();
-        const items = (res?.[0]?.[1] as string[]) ?? [];
-        return items.map(deserializeIntent);
-    }
-
     // Non-draining read for the seal endpoint: every operator must see the same pending intents for a
-    // block, so the relay serves them without removing them (unlike drain, used by the legacy node).
+    // block, so the relay serves them without removing them.
     async all(): Promise<SwapIntentT[]> {
         const items = await this.redis.lrange(listKey(this.poolId), 0, -1);
         return items.map(deserializeIntent);

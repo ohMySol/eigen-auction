@@ -1,13 +1,14 @@
 import type { Request, Response, NextFunction } from "express";
 import type { ToBOrderT, SwapIntentT } from "@eigen-auction/shared";
-import { buildSealedSet } from "../seal";
+import { buildSealedSet, REF_OFFSET } from "../seal";
 
 export interface AuctionControllerDeps {
     // Non-draining reads: every operator must receive the identical sealed set for a block.
     orders: () => Promise<ToBOrderT[]>;
     intents: () => Promise<SwapIntentT[]>;
-    // Human price (currency0 units per 1 currency1) the relay stamps as the block's clearing price.
-    humanPrice: () => number;
+    // The block's clearing price (currency1 whole units per 1 currency0 whole unit), read at the
+    // deterministic referenceBlockNumber so every operator stamps the identical value.
+    humanPrice: (referenceBlock: number) => Promise<number>;
     decimals0: number;
     decimals1: number;
 }
@@ -23,14 +24,21 @@ export const makeAuctionController =
                 res.status(400).json({ error: "block must be a positive integer" });
                 return;
             }
-            const [allOrders, intents] = await Promise.all([deps.orders(), deps.intents()]);
+            // Read the clearing price at the same referenceBlockNumber buildSealedSet stamps, so the
+            // price and the reference block agree (and are identical for every operator).
+            const referenceBlock = targetBlock - REF_OFFSET;
+            const [allOrders, intents, humanPrice] = await Promise.all([
+                deps.orders(),
+                deps.intents(),
+                deps.humanPrice(referenceBlock),
+            ]);
             const orders = allOrders.filter((o) => o.validForBlock === BigInt(targetBlock));
             res.json(
                 buildSealedSet({
                     targetBlock,
                     orders,
                     intents,
-                    humanPrice: deps.humanPrice(),
+                    humanPrice,
                     decimals0: deps.decimals0,
                     decimals1: deps.decimals1,
                 }),

@@ -13,7 +13,7 @@ for (const [path, mod] of Object.entries(artifacts)) {
 
 export const CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? "11155111");
 
-// The avs-rpc base URL (POST /intent, /bid; GET /status). Defaults to the local dev port.
+// The avs-rpc base URL (POST /intent, /order; GET /status). Defaults to the local dev port.
 export const INTENT_URL = import.meta.env.VITE_INTENT_URL ?? "http://127.0.0.1:8088";
 
 export const DEPLOYMENT = byChainId[String(CHAIN_ID)] ?? null;

@@ -2,8 +2,8 @@ import { z } from "zod";
 import type { ToBOrderT } from "@eigen-auction/shared";
 import { hexBytes, hex, uintString } from "./primitives";
 
-// Wire shape of POST /order: a searcher's EIP-712-signed arb order (ToBOrder), replacing the legacy
-// EIP-191 /bid. Field order mirrors the Solidity ToBOrder struct.
+// Wire shape of POST /order: a searcher's EIP-712-signed arb order (ToBOrder). Field order mirrors
+// the Solidity ToBOrder struct.
 export const orderSchema = z.object({
     searcher: hexBytes(20),
     poolId: hexBytes(32),

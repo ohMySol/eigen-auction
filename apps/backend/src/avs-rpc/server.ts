@@ -3,13 +3,21 @@ import Redis from "ioredis";
 import type { Address } from "viem";
 import { config, poolKey, publicClient } from "@eigen-auction/shared/config";
 import { getPoolId } from "@eigen-auction/shared";
-import { settlerAbi } from "@eigen-auction/shared";
+import { settlerAbi, stateViewAbi } from "@eigen-auction/shared";
 import { RedisMempool } from "./mempool";
 import { RedisOrderStore } from "./order-mempool";
 import { IntentService } from "./services/intent.service";
 import { OrderService } from "./services/order.service";
 import { buildRouter } from "./routes";
 import { errorHandler } from "./middleware/error";
+
+// V4 sqrtPriceX96 --> human price: currency1 whole units per 1 currency0 whole unit (the convention
+// clearingPriceX128 expects). (sqrtP / 2^96)^2 is currency1-raw per currency0-raw; scale by the
+// decimal difference to whole units.
+function sqrtPriceToHuman(sqrtPriceX96: bigint, decimals0: number, decimals1: number): number {
+  const ratio = Number(sqrtPriceX96) / 2 ** 96;
+  return ratio * ratio * 10 ** (decimals0 - decimals1);
+}
 
 // Public ingress for the auction: searchers/users POST signed intents here; valid ones are
 // pushed to Redis for the operator to drain each block. Composition root — wires infra
@@ -53,9 +61,20 @@ async function main(): Promise<void> {
       auction: {
         orders: () => orderStore.all(),
         intents: () => mempool.all(),
-        // The relay stamps one clearing price per block. The demo uses the configured
-        // fixed price; a live price feed would replace this getter.
-        humanPrice: () => config.fixedPrice,
+        // Clearing price = the pool's live mid, read from StateView.getSlot0 at the block's
+        // referenceBlockNumber. Pinning to that fixed past block makes it deterministic (every operator
+        // stamps the identical price regardless of when it fetches); tracking the live pool keeps the
+        // batch solvent as prior settles move the price — a fixed price goes stale --> Settler_BatchInsolvent.
+        humanPrice: (referenceBlock: number) =>
+          publicClient
+            .readContract({
+              address: config.stateView,
+              abi: stateViewAbi,
+              functionName: "getSlot0",
+              args: [poolId],
+              blockNumber: BigInt(referenceBlock),
+            })
+            .then(([sqrtPriceX96]) => sqrtPriceToHuman(sqrtPriceX96, config.decimals0, config.decimals1)),
         decimals0: config.decimals0,
         decimals1: config.decimals1,
       },
