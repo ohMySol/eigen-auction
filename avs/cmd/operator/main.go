@@ -80,9 +80,7 @@ func main() {
 		Keys: keys,
 		Feed: feed.NewClient(mustEnv("FEED_URL")),
 		Chain: cl,
-		// Single-operator dev quorum: this node is the whole quorum-0. The chain-backed registry
-		// provider (OperatorStateRetriever) replaces this when scaling to N operators.
-		Quorum: staticQuorum{[]consensus.Operator{{ID: operatorID, Addr: [20]byte(settleAddr)}}},
+		Quorum: buildQuorum(dep, mustEnv("RPC_URL"), operatorID, [20]byte(settleAddr)),
 		Submitter: httpSubmitter{url: mustEnv("AGGREGATOR_URL"), c: &http.Client{Timeout: 3 * time.Second}},
 	}
 	log.Printf("operator up: id=%s settle=%s pool=%s", operatorID.Hex(), settleAddr.Hex(), dep.Pool.PoolID.Hex())
@@ -174,6 +172,20 @@ func settleWhenCommitPending(ctx context.Context, cl *chain.Client, op *node.Ope
 }
 
 // --- wiring helpers ---
+
+// buildQuorum selects the operator-set membership the executor draw ranks over. Default: the
+// chain-backed reader over OperatorStateRetriever, so N registered operators all draw over the same
+// on-chain set. Set STATIC_QUORUM=1 to fall back to a single-operator quorum (this node only) for
+// infra-free dev where no registry is deployed.
+func buildQuorum(dep *chaincfg.Deployment, rpcURL string, operatorID [32]byte, settleAddr [20]byte) node.Quorum {
+	if os.Getenv("STATIC_QUORUM") == "1" {
+		log.Println("STATIC_QUORUM=1: single-operator quorum (no registry read)")
+		return staticQuorum{[]consensus.Operator{{ID: operatorID, Addr: settleAddr}}}
+	}
+	q, err := chain.NewQuorumReader(rpcURL, dep.RegistryCoordinator, dep.OperatorStateRetriever, dep.QuorumNumbers)
+	must(err, "build quorum reader")
+	return q
+}
 
 type staticQuorum struct{ ops []consensus.Operator }
 

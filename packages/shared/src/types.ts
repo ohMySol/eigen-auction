@@ -40,8 +40,3 @@ export interface ToBOrderT {
     validForBlock: bigint;
     signature: Hex;
 }
-
-// Structural type so a consumer never imports avs-rpc's concrete Redis mempool.
-export interface IntentSource {
-    drain(): Promise<SwapIntentT[]>;
-}
