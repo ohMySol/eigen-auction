@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.angstrom.xyz)",
+      "Read(//private/tmp/eigenlayer-contracts/script/output/devnet/**)",
+      "Read(//private/tmp/eigenlayer-contracts/script/configs/devnet/**)",
+      "Bash(grep -r \"sepolia\\\\|11155111\\\\|Sepolia\" /tmp/eigenlayer-contracts/script/configs/ --include=\"*.json\" 2>/dev/null | head -20)",
+      "Read(//private/tmp/eigenlayer-contracts/script/configs/**)",
+      "Read(//tmp/eigenlayer-contracts/script/configs/**)",
+      "Bash(pnpm -r typecheck)",
+      "Bash(pnpm test *)",
+      "Bash(VITE_CHAIN_ID=11155111 pnpm frontend:build)",
+      "Bash(perl -pi -e 's{packages/backend/README\\\\.md}{apps/backend/README.md}g; s{packages/frontend/README\\\\.md}{apps/frontend/README.md}g' README.md)",
+      "Bash(perl -pi -e 's{packages/frontend/dist}{apps/frontend/dist}g' Makefile)",
+      "Bash(pnpm frontend:build)",
+      "Bash(brew --version)",
+      "Read(//usr/local/go/bin/**)"
+    ]
+  }
+}

@@ -13,6 +13,21 @@ broadcast/
 node_modules
 dist/
 src/frontend/dist/
+# Spurious npm lockfiles — this is a pnpm workspace (pnpm-lock.yaml is the source of truth).
+package-lock.json
+
+# Aspire — generated SDK integrations at the repo root (the apphost dir has its own .gitignore).
+# aspire.config.json is committed: the Aspire CLI reads it to locate the AppHost.
+.aspire/
+
+.DS_Store
+
+# Editor / tool local settings
+.vscode/
+.claude/settings.local.json
+
+# Python tooling cache
+.mypy_cache/
 
 # Generated per-chain deployment artifacts (written by the deploy scripts; env-specific).
 # The committed test fixture lives in src/test/fixtures/deployments/.

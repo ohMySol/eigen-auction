@@ -2,19 +2,17 @@
   "name": "eigen-auction",
   "private": true,
   "scripts": {
-    "start-operator": "pnpm -F @eigen-auction/backend start-operator",
-    "start-server": "pnpm -F @eigen-auction/backend start-server",
-    "demo": "pnpm -F @eigen-auction/backend demo",
-    "demo:full": "pnpm -F @eigen-auction/backend demo:full",
     "approve": "pnpm -F @eigen-auction/backend approve",
     "post-batch": "pnpm -F @eigen-auction/backend post-batch",
     "drive-round": "pnpm -F @eigen-auction/backend drive-round",
-    "frontend": "pnpm -F @eigen-auction/frontend dev",
     "frontend:build": "pnpm -F @eigen-auction/frontend build",
     "frontend:preview": "pnpm -F @eigen-auction/frontend preview",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "aspire:start": "pnpm --dir aspire-apphost run aspire:start",
+    "aspire:build": "pnpm --dir aspire-apphost run aspire:build",
+    "aspire:dev": "pnpm --dir aspire-apphost run aspire:dev"
   },
   "devDependencies": {
     "typescript": "^6.0.3",
