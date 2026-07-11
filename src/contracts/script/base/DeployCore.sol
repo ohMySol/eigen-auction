@@ -57,12 +57,16 @@ abstract contract DeployCore is DeployMiddleware {
         address operatorStateRetriever;
     }
 
-    /// @dev Hook permission flags this hook encodes in its address.
+    /// @dev Hook permission flags this hook encodes in its address. Must exactly equal
+    /// EigenAuctionHook.getHookPermissions(), or the hook constructor's validateHookPermissions reverts
+    /// inside the CREATE2 deploy (the mined address bits would satisfy the wrong permission set).
     uint160 constant HOOK_FLAGS = uint160(
+        Hooks.BEFORE_ADD_LIQUIDITY_FLAG |
+        Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG |
+        Hooks.AFTER_REMOVE_LIQUIDITY_FLAG |
         Hooks.BEFORE_SWAP_FLAG |
         Hooks.AFTER_SWAP_FLAG |
-        Hooks.AFTER_ADD_LIQUIDITY_FLAG |
-        Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
+        Hooks.AFTER_REMOVE_LIQUIDITY_RETURNS_DELTA_FLAG
     );
 
     /// @dev Deploys the full stack — BLS middleware (coordinator + registries), AVS proxy, mined-address
