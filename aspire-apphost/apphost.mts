@@ -38,6 +38,11 @@ function withEnv<T extends { withEnvironment(k: string, v: string): T }>(res: T,
 
 const builder = await createBuilder();
 
+// Publish target: `aspire publish` generates a docker-compose.yml + per-service Dockerfiles into
+// aspire-output/ for this environment. `aspire run` (local dev) ignores it. This replaces the
+// hand-written docker/ + docker-compose.yml — the AppHost is now the single source of truth.
+await builder.addDockerComposeEnvironment("docker-compose");
+
 // The one secret prod value the apphost carries: the aggregator's signing key. As an Aspire
 // secret parameter, `aspire publish` maps it to the target's secret store instead of including it into a
 // manifest; locally it's seeded from .env. Non-secret config stays plain env (12-factor). Operator keys
