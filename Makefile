@@ -9,10 +9,10 @@
 #   make drive-round                           # drive one same-block commit+settle round
 #
 # ── Sepolia testnet ─────────────────────────────────────────────────────────────────────
-#   1. Fill .env (SEPOLIA_RPC_URL, DEPLOYER_PK, OPERATOR_PK, CHAIN_ID=11155111, RPC_URL=SEPOLIA_RPC_URL)
+#   1. Fill .env (SEPOLIA_RPC_URL, DEPLOYER_PK, OPERATOR_PK, CHAIN_ID=11155111, RPC_URL=SEPOLIA_RPC_URL,
+#      VITE_CHAIN_ID=11155111, VITE_RPC_URL=<sepolia_rpc>)
 #   2. make deploy-testnet                # deploys contracts, writes deployments/11155111.json
-#   3. export VITE_RPC_URL=<sepolia_rpc> VITE_CHAIN_ID=11155111
-#   4. make up                            # builds + starts all 4 containers --> http://localhost:8080
+#   3. cd aspire-apphost && aspire deploy # build + run the compose stack (redis + relay serving API+SPA)
 # 
 # Required in .env: MAINNET_RPC_URL, SEPOLIA_RPC_URL, DEPLOYER_PK, OPERATOR_PK, SETTLER_CALLER_PK,
 #                   RPC_URL, CHAIN_ID, REDIS_URL
@@ -153,8 +153,3 @@ avs-integration:
 ## Build the production frontend bundle into apps/frontend/dist/.
 frontend-build:
 	pnpm frontend:build
-
-## Start the full docker stack (redis + avs-rpc + frontend). Prereqs: deploy-testnet done, .env populated.
-## Open http://localhost:8080 after this completes.
-up:
-	docker compose up --build

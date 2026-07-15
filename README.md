@@ -151,7 +151,7 @@ cd aspire-apphost && aspire run   # redis + relay + aggregator + operators
 make drive-round                  # post a batch, mine one block --> commit + settle + results
 ```
 
-(Re-running `make demo` once the services are up drives a round automatically.) Use `make results` any
+(Re-running `make up` once the services are up drives a round automatically.) Use `make results` any
 time to reprint the last settled round, or `make results BLOCK=<n>` for a specific block.
 
 ### Local mainnet fork (the step-by-step flow)
@@ -179,8 +179,8 @@ make drive-round                         # post a batch, mine one block --> comm
 ### Sepolia testnet
 
 ```bash
-make deploy-testnet   # deploy contracts + register, write deployments/11155111.json
-make up               # docker stack (redis + relay + frontend) --> http://localhost:8080
+make deploy-testnet                    # deploy contracts + register, write deployments/11155111.json
+cd aspire-apphost && aspire deploy     # build + run the compose stack (redis + relay serving API + SPA)
 ```
 
 ---

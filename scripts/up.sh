@@ -53,6 +53,6 @@ else
       cd aspire-apphost && aspire run     # redis + relay + aggregator + operators
       make drive-round                    # posts a batch, mines the block, prints the results
 
-  (Re-running \`make demo\` once the services are up drives a round automatically.)
+  (Re-running \`make up\` once the services are up drives a round automatically.)
 EOF
 fi

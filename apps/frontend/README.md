@@ -166,23 +166,18 @@ Runtime theme tokens are set on `document.documentElement` via CSS custom proper
 ## Building
 
 ```bash
-# Development (hot reload)
+# Development (hot reload) — served as its own Vite dev server under `aspire run`
 npm run frontend
 
-# Production bundle → src/frontend/dist/
+# Production bundle → apps/frontend/dist/
 npm run frontend:build
-
-# Docker (Vite args baked in at build time)
-docker compose build frontend
 ```
 
-The Docker image (`docker/Dockerfile.frontend`) runs Vite build with `VITE_CHAIN_ID`, `VITE_RPC_URL`, and `VITE_INTENT_URL` as build args, then serves `dist/` via nginx on port 8080.
-
-**Important:** `VITE_*` variables are baked into the bundle at build time. After a redeploy (new `deployments/<chainId>.json`) or env change, rebuild the frontend image:
-
-```bash
-docker compose build frontend && docker compose up -d frontend
-```
+**Deployment.** There is no standalone frontend container. At publish time the SPA is built and served by
+the relay image (`docker/Dockerfile.backend`) as static files, so the whole web tier is one container —
+see [apps/backend/README.md](../backend/README.md). `VITE_CHAIN_ID`, `VITE_RPC_URL`, and `VITE_INTENT_URL`
+are inlined into the bundle at build time (passed as build args by the Aspire AppHost from `.env`), so
+after a redeploy (new `deployments/<chainId>.json`) or env change, rebuild the relay image.
 
 ---
 

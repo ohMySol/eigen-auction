@@ -88,10 +88,9 @@ pnpm --filter @eigen-auction/backend start-server     # or dev-server for hot-re
 ```
 
 **Deployment.** `aspire publish` generates a docker-compose stack from the AppHost (`aspire-output/`),
-and `aspire deploy` builds + runs it. The **relay + redis** already generate correctly — the relay is
-built from `docker/Dockerfile.backend` (which bakes `deployments/`), reaches redis by service name, and
-the Go AVS is excluded (it runs on operator infra). The **frontend** is the remaining piece: Aspire's
-Vite publisher errors on the custom `docker/Dockerfile.frontend`, so until that's wired (and the full
-stack verified against a real chain) the hand-written `docker-compose.yml` (`make up`) is the deploy path.
+and `aspire deploy` builds + runs it. The stack is **redis + the relay**: the relay is built from
+`docker/Dockerfile.backend`, which also builds the Vite SPA and serves it as static files, so one
+container is both the intent API and the web frontend (`VITE_*` are passed as build args). The Go AVS is
+excluded from the compose — it runs on operator infrastructure.
 
 Tests: `pnpm test` (from the repo root) runs the vitest suite.
