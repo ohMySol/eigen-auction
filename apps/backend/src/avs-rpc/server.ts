@@ -1,4 +1,6 @@
 import express from "express";
+import fs from "node:fs";
+import path from "node:path";
 import Redis from "ioredis";
 import type { Address } from "viem";
 import { config, poolKey, publicClient } from "@eigen-auction/shared/config";
@@ -54,6 +56,14 @@ async function main(): Promise<void> {
 
   const app = express();
   app.use(express.json());
+
+  // Serve the built SPA when it's baked into the image (publish: docker/Dockerfile.backend copies it to
+  // ./static). In local dev the Vite dev server serves the frontend instead, so this dir is absent and
+  // both handlers below are simply never registered.
+  const staticDir = path.resolve("static");
+  const serveSpa = fs.existsSync(staticDir);
+  if (serveSpa) app.use(express.static(staticDir));
+
   app.use(
     buildRouter({
       intentService,
@@ -81,6 +91,16 @@ async function main(): Promise<void> {
       isNonceUsed,
     }),
   );
+  // SPA client-side routing: any unmatched GET falls back to index.html. A plain middleware (not a
+  // wildcard route) — Express 5 rejects the bare "*" path. Registered after the API router so real
+  // endpoints win; only active when the static bundle is present.
+  if (serveSpa) {
+    app.use((req, res, next) => {
+      if (req.method !== "GET") return next();
+      res.sendFile(path.join(staticDir, "index.html"));
+    });
+  }
+
   app.use(errorHandler);
 
   const server = app.listen(config.intentPort, () =>

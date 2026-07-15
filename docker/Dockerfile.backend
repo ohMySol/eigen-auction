@@ -1,13 +1,15 @@
-# One image for both backend services; docker-compose `command` selects which to run
-# (pnpm start-server / pnpm start-operator).
+# The relay (avs-rpc) image. Runs `pnpm start-server` (ts-node) with the deployment artifact baked in,
+# and also serves the built Vite SPA as static files (single-container deploy — the relay is both the
+# intent API and the web frontend on one port).
 #
 # Built with pnpm: the build stage installs the whole workspace, then `pnpm deploy` copies ONLY the
 # backend's dependency closure (backend + @eigen-auction/shared + their transitive deps, incl. the
-# ts-node runtime) into a self-contained dir. The frontend's React/wagmi/Vite tree is never in the
-# runtime image because nothing in the backend's graph reaches it.
+# ts-node runtime) into a self-contained dir. The frontend's React/wagmi/Vite node_modules tree is never
+# in the runtime image — only its compiled static bundle (dist/) is copied in as ./static.
 FROM node:20-alpine AS build
 WORKDIR /repo
-RUN corepack enable
+# Pin pnpm to the lockfile-matching version; corepack's default (pnpm 11) breaks on Node 20.
+RUN corepack enable && corepack prepare pnpm@9.8.0 --activate
 
 # node-gyp needs Python + C build tools for native modules pulled in transitively.
 RUN apk add --no-cache python3 make g++
@@ -28,9 +30,24 @@ COPY apps/backend ./apps/backend
 # typescript are declared as prod dependencies, so they are included.
 RUN pnpm --filter=@eigen-auction/backend deploy --prod /out
 
+# Build the Vite SPA in the same stage (its deps are already installed above). VITE_* are inlined into
+# the bundle at build time; the deployment artifact is read by the chain layer at build time too. Only
+# the resulting dist/ is carried into runtime (below), not the frontend's node_modules.
+ARG VITE_CHAIN_ID
+ARG VITE_RPC_URL
+ARG VITE_INTENT_URL
+COPY apps/frontend ./apps/frontend
+COPY deployments ./deployments
+RUN VITE_CHAIN_ID=$VITE_CHAIN_ID VITE_RPC_URL=$VITE_RPC_URL VITE_INTENT_URL=$VITE_INTENT_URL pnpm frontend:build
+
 FROM node:20-alpine AS runtime
 WORKDIR /app
-RUN corepack enable
+# Pin pnpm to the lockfile-matching version; corepack's default (pnpm 11) breaks on Node 20.
+RUN corepack enable && corepack prepare pnpm@9.8.0 --activate
 COPY --from=build /out ./
-# Default to the avs-rpc; overridden per service in compose.
+# Bake the per-chain deployment artifact so the container is self-contained (no volume mount needed).
+COPY deployments ./deployments
+ENV DEPLOYMENTS_DIR=/app/deployments
+# The compiled SPA, served by the relay at ./static (see server.ts). Only the static output, no deps.
+COPY --from=build /repo/apps/frontend/dist ./static
 CMD ["pnpm", "start-server"]

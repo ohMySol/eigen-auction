@@ -16,7 +16,11 @@
       "Bash(perl -pi -e 's{packages/frontend/dist}{apps/frontend/dist}g' Makefile)",
       "Bash(pnpm frontend:build)",
       "Bash(brew --version)",
-      "Read(//usr/local/go/bin/**)"
+      "Read(//usr/local/go/bin/**)",
+      "Bash(lsof -iTCP:8545 -sTCP:LISTEN -n)",
+      "Bash(make anvil-fork *)",
+      "Bash(cd /Users/ah/Desktop/Development/Projects/UniswapV4Hooks/eigen-auction/aspire-apphost *)",
+      "Read(//Users/ah/Desktop/Development/Projects/UniswapV4Hooks/docker/**)"
     ]
   }
 }

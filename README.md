@@ -128,8 +128,13 @@ docs/
 
 ## Quick start
 
-Prerequisites: [Foundry](https://book.getfoundry.sh/), Node 20+ with `pnpm`, Go 1.22+, and (for the
-orchestrated run) the [Aspire CLI](https://aspire.dev). Copy `.env.example` to `.env` and fill it in.
+### Prerequisites 
+- [Foundry](https://book.getfoundry.sh/) 
+- Node 20+ with `pnpm`
+- Go 1.22+ 
+- And (for the
+orchestrated run) the [Aspire CLI](https://aspire.dev)
+- Copy `.env.example` to `.env` and fill it in
 
 ### Local mainnet fork (the primary dev flow)
 
