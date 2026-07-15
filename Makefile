@@ -40,7 +40,7 @@ ETH_BAL := 0x21e19e0c9bab2400000
 # Local services (redis, relay, aggregator, operators, frontend) are launched by Aspire —
 # `cd aspire-apphost && aspire run` — not by make. These targets cover chain setup, operator
 # onboarding, round driving, build/test, and the docker deploy path only.
-.PHONY: anvil-fork fund fund-operator deploy-fork seed-pool deploy-testnet build test avs-test avs-integration fund-operator-stake register approve post-batch drive-round frontend-build up
+.PHONY: anvil-fork fund fund-operator deploy-fork seed-pool deploy-testnet build test avs-test avs-integration fund-operator-stake register approve post-batch drive-round results demo frontend-build up
 
 ## Start a mainnet fork. --auto-impersonate lets fund targets send from whales without unlocking each.
 anvil-fork:
@@ -129,9 +129,20 @@ post-batch:
 	pnpm post-batch
 
 ## Orchestrate one full same-block round: automine off --> post batch --> wait for commit+settle to queue
-## --> mine the target block --> report. Prereqs: the services running (`cd aspire-apphost && aspire run`).
+## --> mine the target block --> report economics (arb captured, LP reward, intents). Prereqs: the
+## services running (`cd aspire-apphost && aspire run`).
 drive-round:
 	pnpm drive-round
+
+## Print the economics of a settled round: arb surplus captured for LPs, reward distributed, and each
+## user swap at the single uniform price. Latest settled block by default, or `make results BLOCK=<n>`.
+results:
+	BLOCK="$(BLOCK)" pnpm results
+
+## One-command local environment spin up for the demo: fork + deploy + seed + register in one go, then (if the services are already
+## up) drive a round and print the results. Otherwise it sets up the chain and tells you what to run next.
+up:
+	./scripts/up.sh
 
 ## Tier-2 harness: cross-check the Go core against the DEPLOYED Settler on the running fork.
 ## Prereqs: `make anvil-fork` (terminal 1) + `make deploy-fork` (terminal 2) done.

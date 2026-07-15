@@ -5,6 +5,7 @@
     "approve": "pnpm -F @eigen-auction/backend approve",
     "post-batch": "pnpm -F @eigen-auction/backend post-batch",
     "drive-round": "pnpm -F @eigen-auction/backend drive-round",
+    "results": "pnpm -F @eigen-auction/backend results",
     "frontend:build": "pnpm -F @eigen-auction/frontend build",
     "frontend:preview": "pnpm -F @eigen-auction/frontend preview",
     "typecheck": "pnpm -r typecheck",

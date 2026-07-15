@@ -11,6 +11,7 @@ import Redis from "ioredis";
 import { config, poolKey, publicClient } from "@eigen-auction/shared/config";
 import { getPoolId, taskManagerAbi } from "@eigen-auction/shared";
 import { postBatch } from "./post-batch";
+import { reportRound } from "./results";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -75,6 +76,10 @@ async function main(): Promise<void> {
             const receipt = await publicClient.getTransactionReceipt({ hash: (tx as { hash: `0x${string}` }).hash });
             console.log(`  tx ${receipt.transactionHash} -> ${receipt.status}`);
         }
+
+        // The economics of what just happened — the whole point, made visible: how much arb surplus was
+        // captured for LPs, the reward distributed, and each user swap at the single uniform price.
+        await reportRound(targetBlock);
     } finally {
         // Leave the batch cleared so the standalone operator sees empty blocks (and stays quiet) between
         // rounds, rather than re-settling the just-consumed intent and reverting with NonceUsed.

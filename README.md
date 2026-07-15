@@ -136,7 +136,25 @@ docs/
 orchestrated run) the [Aspire CLI](https://aspire.dev)
 - Copy `.env.example` to `.env` and fill it in
 
-### Local mainnet fork (the primary dev flow)
+### Fastest path — one command
+
+```bash
+pnpm install
+make up   # fork mainnet + deploy + seed pool + register operator 1, all in one go
+```
+
+`make up` sets up the whole chain (starting `anvil-fork` in the background if it isn't already up).
+Then start the services and drive a round — which prints the **economic result** of the auction:
+
+```bash
+cd aspire-apphost && aspire run   # redis + relay + aggregator + operators
+make drive-round                  # post a batch, mine one block --> commit + settle + results
+```
+
+(Re-running `make demo` once the services are up drives a round automatically.) Use `make results` any
+time to reprint the last settled round, or `make results BLOCK=<n>` for a specific block.
+
+### Local mainnet fork (the step-by-step flow)
 
 ```bash
 # terminal 1 — keep this running
@@ -191,7 +209,9 @@ cd aspire-apphost && aspire run                  # starts every service + opens 
 2. `aspire run` — confirm all services are green in the dashboard (`curl localhost:8088/health`).
 3. `make drive-round` — posts searcher orders + a user intent, then mines the target block. In the
    dashboard you should see every operator log the **same** `executor`, the aggregator log `committed …`,
-   and the drawn operator log `settle submitted …`.
+   and the drawn operator log `settle submitted …`. The command then prints a **results summary**: the
+   arb surplus captured for LPs, the reward distributed, and each user swap at the single uniform price
+   (reprint any time with `make results`).
 
 ---
 

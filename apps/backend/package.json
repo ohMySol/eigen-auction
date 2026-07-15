@@ -8,6 +8,7 @@
     "approve": "ts-node src/scripts/approve.ts",
     "post-batch": "ts-node src/scripts/post-batch.ts",
     "drive-round": "ts-node src/scripts/drive-round.ts",
+    "results": "ts-node src/scripts/results.ts",
     "typecheck": "tsc"
   },
   "dependencies": {

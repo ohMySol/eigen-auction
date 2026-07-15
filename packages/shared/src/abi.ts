@@ -59,3 +59,28 @@ export const eigenAuctionHookAbi = [
    { name: "tickUpper", type: "int24" }, { name: "salt", type: "bytes32" }],
   outputs: [{ name: "amount", type: "uint256" }] },
 ] as const;
+
+// The per-round economic events, hand-written to match EventsLib.sol. The results reporter parses these
+// from the settled block to surface what actually happened: the arb surplus captured for LPs (ArbFilled),
+// the reward distributed to in-range liquidity (ArbitrageSettled), each user swap (IntentFilled), and
+// which operator executed (BlockSettled). PoolId is a bytes32 value type on-chain.
+export const auctionEventsAbi = [
+ { type: "event", name: "ArbFilled", inputs: [
+   { name: "poolId", type: "bytes32", indexed: true },
+   { name: "arber", type: "address", indexed: true },
+   { name: "bid", type: "uint256", indexed: false }] },
+ { type: "event", name: "ArbitrageSettled", inputs: [
+   { name: "poolId", type: "bytes32", indexed: true },
+   { name: "winner", type: "address", indexed: true },
+   { name: "rewardAmount", type: "uint256", indexed: false }] },
+ { type: "event", name: "IntentFilled", inputs: [
+   { name: "poolId", type: "bytes32", indexed: true },
+   { name: "user", type: "address", indexed: true },
+   { name: "zeroForOne", type: "bool", indexed: false },
+   { name: "amountIn", type: "uint256", indexed: false },
+   { name: "amountOut", type: "uint256", indexed: false }] },
+ { type: "event", name: "BlockSettled", inputs: [
+   { name: "poolId", type: "bytes32", indexed: true },
+   { name: "blockNumber", type: "uint256", indexed: true },
+   { name: "operator", type: "address", indexed: true }] },
+] as const;
