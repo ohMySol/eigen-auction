@@ -35,11 +35,29 @@ fi
 echo "  • fund + deploy + seed pool + approve…"
 make fund deploy-fork seed-pool approve
 
-# 3) operator onboarding (operator 1 — the .env keyset). Repeat per keyset for more operators.
-echo "  • registering operator 1 (stake + BLS pubkey)…"
-make fund-operator-stake register STAKE_AMOUNT=1000000000000000000 STAKE_MAGNITUDE=1000000000000000000
+# 3) operator onboarding — three operators so a genuine multi-sig quorum forms (no single operator
+#    meets the 67% threshold alone). Operator 1 is the .env keyset, already funded by `make fund`;
+#    operators 2 and 3 are anvil dev accounts #5/#6 with BLS scalars 2/3 (see docs/N_OPERATORS.md),
+#    funded here before registering. Equal stake keeps any one operator below quorum.
+STAKE=1000000000000000000
 
-echo "  ✓ chain ready — contracts deployed, pool seeded, operator 1 registered."
+echo "  • registering operator 1 (stake + BLS pubkey)…"
+make fund-operator-stake register STAKE_AMOUNT=$STAKE STAKE_MAGNITUDE=$STAKE
+
+# fund an extra operator (ETH + WETH + USDC), mint its stETH, then register with its distinct BLS key.
+register_operator() {
+    local n=$1 addr=$2 pk=$3 bls=$4
+    echo "  • registering operator $n (fund + stake + BLS pubkey)…"
+    make fund-operator OP="$addr"
+    make fund-operator-stake register OPERATOR_PK="$pk" BLS_PRIVATE_KEY="$bls" \
+        STAKE_AMOUNT=$STAKE STAKE_MAGNITUDE=$STAKE
+}
+register_operator 2 0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc \
+    0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba 2
+register_operator 3 0x976EA74026E726554dB657fA54763abd0C3a0aa9 \
+    0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e 3
+
+echo "  ✓ chain ready — contracts deployed, pool seeded, operators 1–3 registered."
 
 # 4) If the services are already running, drive a round now; otherwise point the user at `aspire run`.
 if tcp_up "$RELAY_PORT" && tcp_up "$AGG_PORT"; then

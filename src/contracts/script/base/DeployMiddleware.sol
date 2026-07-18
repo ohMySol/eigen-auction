@@ -199,6 +199,8 @@ abstract contract DeployMiddleware is Script {
             multiplier: STRATEGY_MULTIPLIER
         });
 
+        // This creates operator set on-chain and it configures StakeRegistry with my 
+        // `config.stakeStrategy` at 1x multiplier.
         rs.coordinator.createSlashableStakeQuorum(
             operatorSetParams, MIN_OPERATOR_STAKE, strategyParams, QUORUM_LOOK_AHEAD
         );
